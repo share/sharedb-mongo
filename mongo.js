@@ -39,6 +39,9 @@ LiveDbMongo.prototype.close = function(callback) {
   this.closed = true;
 };
 
+
+// **** Snapshot methods
+
 LiveDbMongo.prototype.getSnapshot = function(cName, docName, callback) {
   if (this.closed) return callback('db already closed');
   this.mongo.collection(cName).findOne({_id: docName}, function(err, doc) {
@@ -59,6 +62,63 @@ LiveDbMongo.prototype.writeSnapshot = function(cName, docName, data, callback) {
   var doc = castToDoc(docName, data);
   this.mongo.collection(cName).update({_id: docName}, doc, {upsert: true}, callback);
 };
+
+
+// ******* Oplog methods
+
+// Overwrite me if you want to change this behaviour.
+LiveDbMongo.prototype.getOplogCollectionName = function(cName) {
+  return cName + " ops";
+}
+
+LiveDbMongo.prototype.writeOp = function(cName, docName, opData, callback) {
+  if (this.closed) return callback('db already closed');
+  var self = this;
+
+  var collection = this.mongo.collection(this.getOplogCollectionName(cName));
+
+  var data = shallowClone(opData);;
+  data._id = docName + '.' + opData.v,
+  data.docName = docName;
+
+  collection.save(data, callback);
+};
+
+LiveDbMongo.prototype.getVersion = function(cName, docName, callback) {
+  if (this.closed) return callback('db already closed');
+  var collection = this.mongo.collection(this.getOplogCollectionName(cName));
+
+  collection.findOne({docName:docName}, {sort:{v:-1}}, function(err, data) {
+    if (err) return callback(err);
+
+    if (data == null) {
+      callback(null, 0);
+    } else {
+      callback(err, data.v + 1);
+    }
+  });
+};
+
+LiveDbMongo.prototype.getOps = function(cName, docName, start, end, callback) {
+  if (this.closed) return callback('db already closed');
+
+  var collection = this.mongo.collection(this.getOplogCollectionName(cName));
+  var query = end == null ? {$gte:start} : {$gte:start, $lt:end};
+  collection.find({docName:docName, v:query}, {sort:{v:1}}).toArray(function(err, data) {
+    if (err) return callback(err);
+
+    for (var i = 0; i < data.length; i++) {
+      // Strip out _id in the results
+      delete data[i]._id;
+      delete data[i].docName;
+    }
+    callback(null, data);
+  });
+
+};
+
+
+// ***** Query methods
 
 LiveDbMongo.prototype.query = function(livedb, cName, inputQuery, callback) {
   if (this.closed) return callback('db already closed');
@@ -119,6 +179,9 @@ LiveDbMongo.prototype.queryNeedsPollMode = function(index, query) {
     query.hasOwnProperty('$limit') ||
     query.hasOwnProperty('$skip');
 };
+
+
+// Utility methods
 
 function extractCursorMethods(query) {
   var out = [];
