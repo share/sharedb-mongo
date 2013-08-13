@@ -1,5 +1,6 @@
 var _require = require;
 var mongoskin = _require('mongoskin');
+var assert = require('assert');
 
 var metaOperators = {
   $comment: true
@@ -68,18 +69,21 @@ LiveDbMongo.prototype.writeSnapshot = function(cName, docName, data, callback) {
 
 // Overwrite me if you want to change this behaviour.
 LiveDbMongo.prototype.getOplogCollectionName = function(cName) {
-  return cName + " ops";
-}
+  // Using an underscore to make it easier to see whats going in on the shell
+  return cName + '_ops';
+};
 
 LiveDbMongo.prototype.writeOp = function(cName, docName, opData, callback) {
+  assert(opData.v != null);
+
   if (this.closed) return callback('db already closed');
   var self = this;
 
   var collection = this.mongo.collection(this.getOplogCollectionName(cName));
 
-  var data = shallowClone(opData);;
-  data._id = docName + '.' + opData.v,
-  data.docName = docName;
+  var data = shallowClone(opData);
+  data._id = docName + ' v' + opData.v,
+  data.name = docName;
 
   collection.save(data, callback);
 };
@@ -88,7 +92,7 @@ LiveDbMongo.prototype.getVersion = function(cName, docName, callback) {
   if (this.closed) return callback('db already closed');
   var collection = this.mongo.collection(this.getOplogCollectionName(cName));
 
-  collection.findOne({docName:docName}, {sort:{v:-1}}, function(err, data) {
+  collection.findOne({name:docName}, {sort:{v:-1}}, function(err, data) {
     if (err) return callback(err);
 
     if (data == null) {
@@ -104,13 +108,13 @@ LiveDbMongo.prototype.getOps = function(cName, docName, start, end, callback) {
 
   var collection = this.mongo.collection(this.getOplogCollectionName(cName));
   var query = end == null ? {$gte:start} : {$gte:start, $lt:end};
-  collection.find({docName:docName, v:query}, {sort:{v:1}}).toArray(function(err, data) {
+  collection.find({name:docName, v:query}, {sort:{v:1}}).toArray(function(err, data) {
     if (err) return callback(err);
 
     for (var i = 0; i < data.length; i++) {
       // Strip out _id in the results
       delete data[i]._id;
-      delete data[i].docName;
+      delete data[i].name;
     }
     callback(null, data);
   });

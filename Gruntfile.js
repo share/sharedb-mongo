@@ -17,14 +17,14 @@ module.exports = function(grunt) {
       , expr: true
       , node: true
       }
-    , all: ['Gruntfile.js', 'lib/**/*.js']
+    , all: ['Gruntfile.js', 'mongo.js']
     }
   , simplemocha: {
       options: {
         reporter: 'spec'
       }
     , all: {
-        src: 'test/**/*.mocha.coffee'
+        src: 'test.coffee'
       }
     }
   });
