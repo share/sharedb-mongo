@@ -7,16 +7,12 @@
     "mongoskin": "~0.5.0"
   },
   "devDependencies": {
-    "grunt": "~0.4.1",
     "mocha": "~1.9.0",
-    "expect.js": "~0.2.0",
     "coffee-script": "~1.6.2",
-    "grunt-simple-mocha": "~0.4.0",
-    "livedb": "~0.2",
-    "grunt-contrib-jshint": "~0.4.3"
+    "livedb": "~0.2"
   },
   "scripts": {
-    "test": "grunt test"
+    "test": "mocha --compilers coffee:coffee-script --reporter spec --check-leaks test.coffee"
   },
   "repository": "git://github.com/share/livedb-mongo.git",
   "author": "Joseph Gentle and Nate Smith",
