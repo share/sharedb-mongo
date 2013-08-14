@@ -20,15 +20,31 @@ var cursorOperators = {
 , $skip: 'skip'
 };
 
-// mongo is a mongoskin client. Create with:
-// mongo.db('localhost:27017/tx?auto_reconnect', safe:true)
-exports = module.exports = function() {
-  var mongo = mongoskin.db.apply(mongoskin.db, arguments);
+/* There are two ways to instantiate a livedb-mongo wrapper.
+ *
+ * 1. The simplest way is to just invoke the module and pass in your mongoskin
+ * arguments as arguments to the module function. For example:
+ *
+ * var db = require('livedb-mongo')('localhost:27017/test?auto_reconnect', {safe:true});
+ *
+ * 2. If you already have a mongoskin instance that you want to use, you can
+ * just pass it into livedb-mongo:
+ *
+ * var skin = require('mongoskin')('localhost:27017/test?auto_reconnect', {safe:true});
+ * var db = require('livedb-mongo')(skin);
+ */
+exports = module.exports = function(mongo) {
+  if (typeof mongo !== 'object') {
+    mongo = mongoskin.db.apply(mongoskin.db, arguments);
+  }
   return new LiveDbMongo(mongo);
 };
 
+// Deprecated. Don't use directly.
 exports.LiveDbMongo = LiveDbMongo;
 
+// mongo is a mongoskin client. Create with:
+// mongo.db('localhost:27017/tx?auto_reconnect', safe:true)
 function LiveDbMongo(mongo) {
   this.mongo = mongo;
   this.closed = false;
