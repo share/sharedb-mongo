@@ -61,6 +61,7 @@ LiveDbMongo.prototype.close = function(callback) {
 
 LiveDbMongo.prototype.getSnapshot = function(cName, docName, callback) {
   if (this.closed) return callback('db already closed');
+  if (/_ops$/.test(cName)) return callback('Invalid collection name');
   this.mongo.collection(cName).findOne({_id: docName}, function(err, doc) {
     callback(err, castToSnapshot(doc));
   });
@@ -68,6 +69,7 @@ LiveDbMongo.prototype.getSnapshot = function(cName, docName, callback) {
 
 LiveDbMongo.prototype.getBulkSnapshots = function(cName, docNames, callback) {
   if (this.closed) return callback('db already closed');
+  if (/_ops$/.test(cName)) return callback('Invalid collection name');
   this.mongo.collection(cName).find({_id:{$in:docNames}}).toArray(function(err, results) {
     results = results && results.map(castToSnapshot);
     callback(err, results);
@@ -76,6 +78,7 @@ LiveDbMongo.prototype.getBulkSnapshots = function(cName, docNames, callback) {
 
 LiveDbMongo.prototype.writeSnapshot = function(cName, docName, data, callback) {
   if (this.closed) return callback('db already closed');
+  if (/_ops$/.test(cName)) return callback('Invalid collection name');
   var doc = castToDoc(docName, data);
   this.mongo.collection(cName).update({_id: docName}, doc, {upsert: true}, callback);
 };
@@ -93,6 +96,7 @@ LiveDbMongo.prototype.writeOp = function(cName, docName, opData, callback) {
   assert(opData.v != null);
 
   if (this.closed) return callback('db already closed');
+  if (/_ops$/.test(cName)) return callback('Invalid collection name');
   var self = this;
 
   var collection = this.mongo.collection(this.getOplogCollectionName(cName));
@@ -106,6 +110,7 @@ LiveDbMongo.prototype.writeOp = function(cName, docName, opData, callback) {
 
 LiveDbMongo.prototype.getVersion = function(cName, docName, callback) {
   if (this.closed) return callback('db already closed');
+  if (/_ops$/.test(cName)) return callback('Invalid collection name');
   var collection = this.mongo.collection(this.getOplogCollectionName(cName));
 
   collection.findOne({name:docName}, {sort:{v:-1}}, function(err, data) {
@@ -121,6 +126,7 @@ LiveDbMongo.prototype.getVersion = function(cName, docName, callback) {
 
 LiveDbMongo.prototype.getOps = function(cName, docName, start, end, callback) {
   if (this.closed) return callback('db already closed');
+  if (/_ops$/.test(cName)) return callback('Invalid collection name');
 
   var collection = this.mongo.collection(this.getOplogCollectionName(cName));
   var query = end == null ? {$gte:start} : {$gte:start, $lt:end};
@@ -142,6 +148,7 @@ LiveDbMongo.prototype.getOps = function(cName, docName, start, end, callback) {
 
 LiveDbMongo.prototype.query = function(livedb, cName, inputQuery, callback) {
   if (this.closed) return callback('db already closed');
+  if (/_ops$/.test(cName)) return callback('Invalid collection name');
 
   var query = normalizeQuery(inputQuery);
   var cursorMethods = extractCursorMethods(query);
@@ -165,6 +172,7 @@ LiveDbMongo.prototype.query = function(livedb, cName, inputQuery, callback) {
 
 LiveDbMongo.prototype.queryDoc = function(livedb, index, cName, docName, inputQuery, callback) {
   if (this.closed) return callback('db already closed');
+  if (/_ops$/.test(cName)) return callback('Invalid collection name');
   var query = normalizeQuery(inputQuery);
 
   // Run the query against a particular mongo document by adding an _id filter
