@@ -153,21 +153,32 @@ LiveDbMongo.prototype.query = function(livedb, cName, inputQuery, callback) {
   var query = normalizeQuery(inputQuery);
   var cursorMethods = extractCursorMethods(query);
 
-  this.mongo.collection(cName).find(query, function(err, cursor) {
-    if (err) return callback(err);
+  // For count queries, don't run the find() at all.
+  if (query.$count) {
+    delete query.$count;
+    this.mongo.collection(cName).count(query.$query, function(err, count) {
+      if (err) return callback(err);
 
-    for (var i = 0; i < cursorMethods.length; i++) {
-      var item = cursorMethods[i];
-      var method = item[0];
-      var arg = item[1];
-      cursor[method](arg);
-    }
-
-    cursor.toArray(function(err, results) {
-      results = results && results.map(castToSnapshot);
-      callback(err, results);
+      // This API is kind of awful. FIXME in livedb.
+      callback(err, {results:[], extra:count});
     });
-  });
+  } else {
+    this.mongo.collection(cName).find(query, function(err, cursor) {
+      if (err) return callback(err);
+
+      for (var i = 0; i < cursorMethods.length; i++) {
+        var item = cursorMethods[i];
+        var method = item[0];
+        var arg = item[1];
+        cursor[method](arg);
+      }
+
+      cursor.toArray(function(err, results) {
+        results = results && results.map(castToSnapshot);
+        callback(err, results);
+      });
+    });
+  }
 };
 
 LiveDbMongo.prototype.queryDoc = function(livedb, index, cName, docName, inputQuery, callback) {
@@ -205,7 +216,8 @@ LiveDbMongo.prototype.willOpMakeDocMatchQuery = function(currentStatus, query, o
 LiveDbMongo.prototype.queryNeedsPollMode = function(index, query) {
   return query.hasOwnProperty('$orderby') ||
     query.hasOwnProperty('$limit') ||
-    query.hasOwnProperty('$skip');
+    query.hasOwnProperty('$skip') ||
+    query.hasOwnProperty('$count');
 };
 
 
