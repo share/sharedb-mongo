@@ -1,6 +1,6 @@
 {
   "name": "livedb-mongo",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "MongoDB database adapter for livedb",
   "main": "mongo.js",
   "dependencies": {
