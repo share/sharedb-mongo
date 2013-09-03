@@ -176,7 +176,7 @@ LiveDbMongo.prototype.query = function(livedb, cName, inputQuery, callback) {
   // For count queries, don't run the find() at all.
   if (query.$count) {
     delete query.$count;
-    this.mongo.collection(cName).count(query.$query, function(err, count) {
+    this.mongo.collection(cName).count(query.$query || {}, function(err, count) {
       if (err) return callback(err);
 
       // This API is kind of awful. FIXME in livedb.
