@@ -48,6 +48,17 @@ exports.LiveDbMongo = LiveDbMongo;
 function LiveDbMongo(mongo) {
   this.mongo = mongo;
   this.closed = false;
+
+  // The getVersion() and getOps() methods depend on a collectionname_ops
+  // collection, and that collection should have an index on the operations
+  // stored there. I could ask people to make these indexes themselves, but
+  // even I forgot on some of my collections, so the mongo driver will just do
+  // it manually. This approach will leak memory relative to the number of
+  // collections you have, but if you've got thousands of mongo collections
+  // you're probably doing something wrong.
+
+  // map from collection name -> true for op collections we've ensureIndex'ed
+  this.opIndexes = {};
 }
 
 LiveDbMongo.prototype.close = function(callback) {
@@ -92,6 +103,19 @@ LiveDbMongo.prototype.getOplogCollectionName = function(cName) {
   return cName + '_ops';
 };
 
+// Get and return the op collection from mongo, ensuring it has the op index.
+LiveDbMongo.prototype._opCollection = function(cName) {
+  var collection = this.mongo.collection(this.getOplogCollectionName(cName));
+
+  if (!this.opIndexes[cName]) {
+    collection.ensureIndex({name: 1, v: 1});
+
+    this.opIndexes[cName] = true;
+  }
+
+  return collection;
+};
+
 LiveDbMongo.prototype.writeOp = function(cName, docName, opData, callback) {
   assert(opData.v != null);
 
@@ -99,21 +123,18 @@ LiveDbMongo.prototype.writeOp = function(cName, docName, opData, callback) {
   if (/_ops$/.test(cName)) return callback('Invalid collection name');
   var self = this;
 
-  var collection = this.mongo.collection(this.getOplogCollectionName(cName));
-
   var data = shallowClone(opData);
   data._id = docName + ' v' + opData.v,
   data.name = docName;
 
-  collection.save(data, callback);
+  this._opCollection(cName).save(data, callback);
 };
 
 LiveDbMongo.prototype.getVersion = function(cName, docName, callback) {
   if (this.closed) return callback('db already closed');
   if (/_ops$/.test(cName)) return callback('Invalid collection name');
-  var collection = this.mongo.collection(this.getOplogCollectionName(cName));
 
-  collection.findOne({name:docName}, {sort:{v:-1}}, function(err, data) {
+  this._opCollection(cName).findOne({name:docName}, {sort:{v:-1}}, function(err, data) {
     if (err) return callback(err);
 
     if (data == null) {
@@ -128,9 +149,8 @@ LiveDbMongo.prototype.getOps = function(cName, docName, start, end, callback) {
   if (this.closed) return callback('db already closed');
   if (/_ops$/.test(cName)) return callback('Invalid collection name');
 
-  var collection = this.mongo.collection(this.getOplogCollectionName(cName));
   var query = end == null ? {$gte:start} : {$gte:start, $lt:end};
-  collection.find({name:docName, v:query}, {sort:{v:1}}).toArray(function(err, data) {
+  this._opCollection(cName).find({name:docName, v:query}, {sort:{v:1}}).toArray(function(err, data) {
     if (err) return callback(err);
 
     for (var i = 0; i < data.length; i++) {
