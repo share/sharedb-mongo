@@ -42,7 +42,7 @@ describe 'mongo', ->
               if JSON.stringify(idx) is '[["name",1],["v",1]]'
                 return done()
 
-            throw Error 'Could not find index in ops db'
+            throw Error "Could not find index in ops db - #{JSON.stringify(indexes)}"
         , 100
 
   require('livedb/test/snapshotdb') create
