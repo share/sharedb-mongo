@@ -108,7 +108,9 @@ LiveDbMongo.prototype._opCollection = function(cName) {
   var collection = this.mongo.collection(this.getOplogCollectionName(cName));
 
   if (!this.opIndexes[cName]) {
-    collection.ensureIndex({name: 1, v: 1});
+    collection.ensureIndex({name: 1, v: 1}, true, function(error, name) {
+      if (error) console.warn('Warning: Could not create index for op collection:', error.stack || error);
+    });
 
     this.opIndexes[cName] = true;
   }
