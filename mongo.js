@@ -82,30 +82,29 @@ LiveDbMongo.prototype.getSnapshot = function(cName, docName, callback) {
 LiveDbMongo.prototype.bulkGetSnapshot = function(requests, callback) {
   if (this.closed) return callback('db already closed');
 
-  var getSnapshot = function (cName, callback) {
+  var mongo = this.mongo;
+  var results = {};
+
+  var getSnapshots = function(cName, callback) {
     if (/_ops$/.test(cName)) return callback('Invalid collection name');
 
-    var result = {};
+    var cResult = results[cName] = {};
 
     var docNames = requests[cName];
-    this.mongo.collection(cName).find({_id:{$in:docNames}}).toArray(function(err, data) {
+    mongo.collection(cName).find({_id:{$in:docNames}}).toArray(function(err, data) {
       if (err) return callback(err);
       data = data && data.map(castToSnapshot);
 
       for (var i = 0; i < data.length; i++) {
-        result[data[i].docName] = data[i];
+        cResult[data[i].docName] = data[i];
       }
-      callback(null, result);
+      callback();
     });
   };
 
-  var functionMap = {};
-
-  for (var cName in requests) {
-    functionMap[cName] = getSnapshot.bind(this, cName);
-  }
-
-  async.parallel(functionMap, callback);
+  async.each(Object.keys(requests), getSnapshots, function(err) {
+    callback(err, err ? null : results);
+  });
 };
 
 LiveDbMongo.prototype.writeSnapshot = function(cName, docName, data, callback) {
