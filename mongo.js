@@ -1,6 +1,7 @@
 var _require = require;
 var mongoskin = _require('mongoskin');
 var assert = require('assert');
+var async = require('async');
 
 var metaOperators = {
   $comment: true
@@ -81,37 +82,30 @@ LiveDbMongo.prototype.getSnapshot = function(cName, docName, callback) {
 LiveDbMongo.prototype.bulkGetSnapshot = function(requests, callback) {
   if (this.closed) return callback('db already closed');
 
-  // It might be nice to rewrite this to use async.map.
-  var pending = 1;
-  var results = {};
-  var done = function() {
-    pending--;
-    if (pending === 0) {
-      callback(null, results);
-    }
-  };
-
-  for (var cName in requests) {
-    pending++
+  var getSnapshot = function (cName, callback) {
     if (/_ops$/.test(cName)) return callback('Invalid collection name');
 
-    results[cName] = {};
-    var mongo = this.mongo;
+    var result = {};
 
-    (function(cName) {
-      var docNames = requests[cName];
-      mongo.collection(cName).find({_id:{$in:docNames}}).toArray(function(err, data) {
-        if (err) return callback(err);
-        data = data && data.map(castToSnapshot);
+    var docNames = requests[cName];
+    this.mongo.collection(cName).find({_id:{$in:docNames}}).toArray(function(err, data) {
+      if (err) return callback(err);
+      data = data && data.map(castToSnapshot);
 
-        for (var i = 0; i < data.length; i++) {
-          results[cName][data[i].docName] = data[i];
-        }
-        done()
-      });
-    })(cName);
+      for (var i = 0; i < data.length; i++) {
+        result[data[i].docName] = data[i];
+      }
+      callback(null, result);
+    });
+  };
+
+  var functionMap = {};
+
+  for (var cName in requests) {
+    functionMap[cName] = getSnapshot.bind(this, cName);
   }
-  done();
+
+  async.parallel(functionMap, callback);
 };
 
 LiveDbMongo.prototype.writeSnapshot = function(cName, docName, data, callback) {
