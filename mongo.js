@@ -14,6 +14,7 @@ var metaOperators = {
 , $returnKey: true
 , $showDiskLoc: true
 , $snapshot: true
+, $count: true
 };
 
 var cursorOperators = {
