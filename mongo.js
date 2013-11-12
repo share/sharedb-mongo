@@ -313,6 +313,7 @@ function castToDoc(docName, data) {
     {_data: (data.data === void 0) ? null : data.data};
   doc._type = data.type || null;
   doc._v = data.v;
+  doc._m = data.m;
   doc._id = docName;
   return doc;
 }
@@ -323,16 +324,19 @@ function castToSnapshot(doc) {
   var v = doc._v;
   var docName = doc._id;
   var data = doc._data;
+  var meta = doc._m;
   if (data === void 0) {
     doc = shallowClone(doc);
     delete doc._type;
     delete doc._v;
     delete doc._id;
+    delete doc._m;
     return {
       data: doc
     , type: type
     , v: v
     , docName: docName
+    , m: meta
     };
   }
   return {
@@ -340,6 +344,7 @@ function castToSnapshot(doc) {
   , type: type
   , v: v
   , docName: docName
+  , m: meta
   };
 }
 
