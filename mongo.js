@@ -35,11 +35,11 @@ var cursorOperators = {
  * var skin = require('mongoskin')('localhost:27017/test?auto_reconnect', {safe:true});
  * var db = require('livedb-mongo')(skin);
  */
-exports = module.exports = function(mongo) {
+exports = module.exports = function(mongo, options) {
   if (typeof mongo !== 'object') {
     mongo = mongoskin.db.apply(mongoskin.db, arguments);
   }
-  return new LiveDbMongo(mongo);
+  return new LiveDbMongo(mongo, options);
 };
 
 // Deprecated. Don't use directly.
@@ -47,9 +47,13 @@ exports.LiveDbMongo = LiveDbMongo;
 
 // mongo is a mongoskin client. Create with:
 // mongo.db('localhost:27017/tx?auto_reconnect', safe:true)
-function LiveDbMongo(mongo) {
+function LiveDbMongo(mongo, options) {
   this.mongo = mongo;
   this.closed = false;
+
+  if (options && options.mongoPoll) {
+    this.mongoPoll = options.mongoPoll;
+  }
 
   // The getVersion() and getOps() methods depend on a collectionname_ops
   // collection, and that collection should have an index on the operations
@@ -189,24 +193,21 @@ LiveDbMongo.prototype.getOps = function(cName, docName, start, end, callback) {
 
 // ***** Query methods
 
-LiveDbMongo.prototype.query = function(livedb, cName, inputQuery, callback) {
-  if (this.closed) return callback('db already closed');
-  if (/_ops$/.test(cName)) return callback('Invalid collection name');
-
-  var query = normalizeQuery(inputQuery);
-  var cursorMethods = extractCursorMethods(query);
-
+// Internal method to actually run the query.
+LiveDbMongo.prototype._query = function(mongo, cName, query, callback) {
   // For count queries, don't run the find() at all.
   if (query.$count) {
     delete query.$count;
-    this.mongo.collection(cName).count(query.$query || {}, function(err, count) {
+    mongo.collection(cName).count(query.$query || {}, function(err, count) {
       if (err) return callback(err);
 
       // This API is kind of awful. FIXME in livedb.
       callback(err, {results:[], extra:count});
     });
   } else {
-    this.mongo.collection(cName).find(query, function(err, cursor) {
+    var cursorMethods = extractCursorMethods(query);
+
+    mongo.collection(cName).find(query, function(err, cursor) {
       if (err) return callback(err);
 
       for (var i = 0; i < cursorMethods.length; i++) {
@@ -221,6 +222,32 @@ LiveDbMongo.prototype.query = function(livedb, cName, inputQuery, callback) {
         callback(err, results);
       });
     });
+  }
+
+};
+
+LiveDbMongo.prototype.query = function(livedb, cName, inputQuery, opts, callback) {
+  if (this.closed) return callback('db already closed');
+  if (/_ops$/.test(cName)) return callback('Invalid collection name');
+
+  // To support livedb <=0.2.8
+  if (typeof opts === 'function') {
+    callback = opts;
+    opts = {};
+  }
+
+  var query = normalizeQuery(inputQuery);
+
+  // Use this.mongoPoll if its a polling query.
+  if (opts.mode === 'poll' && this.mongoPoll) {
+    var self = this;
+    // This timeout is a dodgy hack to work around race conditions replicating the
+    // data out to the polling target replica.
+    setTimeout(function() {
+      self._query(self.mongoPoll, cName, query, callback);
+    }, 300);
+  } else {
+    this._query(this.mongo, cName, query, callback);
   }
 };
 
