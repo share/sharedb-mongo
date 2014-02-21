@@ -1,6 +1,7 @@
 # Mocha test using livedb's snapshot tests
 mongoskin = require 'mongoskin'
 liveDbMongo = require './mongo'
+assert = require 'assert'
 
 # Clear mongo
 clear = (callback) ->
@@ -44,6 +45,28 @@ describe 'mongo', ->
 
             throw Error "Could not find index in ops db - #{JSON.stringify(indexes)}"
         , 100
+
+    it 'does not allow editing the system collection', (done) -> create (db) =>
+      db.writeSnapshot 'system', 'test', {x:5}, (err) ->
+        assert.ok err
+        db.getSnapshot 'system', 'test', (err, data) ->
+          assert.ok err
+          assert.equal data, null
+          done()
+
+    describe 'query', ->
+      it 'does not allow $where queries in query', (done) -> create (db) =>
+        db.query 'unused', 'testcollection', {$where:"true"}, {}, (err, results) ->
+          assert.ok err
+          assert.equal results, null
+          done()
+
+      it 'does not allow $where queries in querydoc', (done) -> create (db) =>
+        db.queryDoc 'unused', 'unused', 'testcollection', 'somedoc', {$where:"true"}, (err, results) ->
+          assert.ok err
+          assert.equal results, null
+          done()
+
 
   require('livedb/test/snapshotdb') create
   require('livedb/test/oplog') create

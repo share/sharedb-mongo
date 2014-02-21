@@ -65,6 +65,10 @@ function LiveDbMongo(mongo, options) {
 
   // map from collection name -> true for op collections we've ensureIndex'ed
   this.opIndexes = {};
+
+  // Allow $while queries. They're a security hole because you can run
+  // server-side javascript.
+  this.allowWhereQuery = options ? (options.allowWhereQuery || false) : false;
 }
 
 LiveDbMongo.prototype.close = function(callback) {
@@ -73,12 +77,19 @@ LiveDbMongo.prototype.close = function(callback) {
   this.closed = true;
 };
 
+function isValidCName(cName) {
+  return !(/_ops$/.test(cName)) && cName !== 'system';
+}
+
+LiveDbMongo.prototype._check = function(cName) {
+  if (this.closed) return 'db already closed';
+  if (!isValidCName(cName)) return 'Invalid collection name';
+};
 
 // **** Snapshot methods
 
 LiveDbMongo.prototype.getSnapshot = function(cName, docName, callback) {
-  if (this.closed) return callback('db already closed');
-  if (/_ops$/.test(cName)) return callback('Invalid collection name');
+  var err; if (err = this._check(cName)) return callback(err);
   this.mongo.collection(cName).findOne({_id: docName}, function(err, doc) {
     callback(err, castToSnapshot(doc));
   });
@@ -91,7 +102,7 @@ LiveDbMongo.prototype.bulkGetSnapshot = function(requests, callback) {
   var results = {};
 
   var getSnapshots = function(cName, callback) {
-    if (/_ops$/.test(cName)) return callback('Invalid collection name');
+    if (!isValidCName(cName)) return 'Invalid collection name';
 
     var cResult = results[cName] = {};
 
@@ -113,8 +124,7 @@ LiveDbMongo.prototype.bulkGetSnapshot = function(requests, callback) {
 };
 
 LiveDbMongo.prototype.writeSnapshot = function(cName, docName, data, callback) {
-  if (this.closed) return callback('db already closed');
-  if (/_ops$/.test(cName)) return callback('Invalid collection name');
+  var err; if (err = this._check(cName)) return callback(err);
   var doc = castToDoc(docName, data);
   this.mongo.collection(cName).update({_id: docName}, doc, {upsert: true}, callback);
 };
@@ -146,8 +156,7 @@ LiveDbMongo.prototype._opCollection = function(cName) {
 LiveDbMongo.prototype.writeOp = function(cName, docName, opData, callback) {
   assert(opData.v != null);
 
-  if (this.closed) return callback('db already closed');
-  if (/_ops$/.test(cName)) return callback('Invalid collection name');
+  var err; if (err = this._check(cName)) return callback(err);
   var self = this;
 
   var data = shallowClone(opData);
@@ -158,8 +167,7 @@ LiveDbMongo.prototype.writeOp = function(cName, docName, opData, callback) {
 };
 
 LiveDbMongo.prototype.getVersion = function(cName, docName, callback) {
-  if (this.closed) return callback('db already closed');
-  if (/_ops$/.test(cName)) return callback('Invalid collection name');
+  var err; if (err = this._check(cName)) return callback(err);
 
   this._opCollection(cName).findOne({name:docName}, {sort:{v:-1}}, function(err, data) {
     if (err) return callback(err);
@@ -173,8 +181,7 @@ LiveDbMongo.prototype.getVersion = function(cName, docName, callback) {
 };
 
 LiveDbMongo.prototype.getOps = function(cName, docName, start, end, callback) {
-  if (this.closed) return callback('db already closed');
-  if (/_ops$/.test(cName)) return callback('Invalid collection name');
+  var err; if (err = this._check(cName)) return callback(err);
 
   var query = end == null ? {$gte:start} : {$gte:start, $lt:end};
   this._opCollection(cName).find({name:docName, v:query}, {sort:{v:1}}).toArray(function(err, data) {
@@ -227,8 +234,7 @@ LiveDbMongo.prototype._query = function(mongo, cName, query, callback) {
 };
 
 LiveDbMongo.prototype.query = function(livedb, cName, inputQuery, opts, callback) {
-  if (this.closed) return callback('db already closed');
-  if (/_ops$/.test(cName)) return callback('Invalid collection name');
+  var err; if (err = this._check(cName)) return callback(err);
 
   // To support livedb <=0.2.8
   if (typeof opts === 'function') {
@@ -237,6 +243,8 @@ LiveDbMongo.prototype.query = function(livedb, cName, inputQuery, opts, callback
   }
 
   var query = normalizeQuery(inputQuery);
+  var err = this.checkQuery(query);
+  if (err) return callback(err);
 
   // Use this.mongoPoll if its a polling query.
   if (opts.mode === 'poll' && this.mongoPoll) {
@@ -244,6 +252,7 @@ LiveDbMongo.prototype.query = function(livedb, cName, inputQuery, opts, callback
     // This timeout is a dodgy hack to work around race conditions replicating the
     // data out to the polling target replica.
     setTimeout(function() {
+      if (self.closed) return callback('db already closed');
       self._query(self.mongoPoll, cName, query, callback);
     }, 300);
   } else {
@@ -252,9 +261,10 @@ LiveDbMongo.prototype.query = function(livedb, cName, inputQuery, opts, callback
 };
 
 LiveDbMongo.prototype.queryDoc = function(livedb, index, cName, docName, inputQuery, callback) {
-  if (this.closed) return callback('db already closed');
-  if (/_ops$/.test(cName)) return callback('Invalid collection name');
+  var err;
+  if (err = this._check(cName)) return callback(err);
   var query = normalizeQuery(inputQuery);
+  if (err = this.checkQuery(query)) return callback(err);
 
   // Run the query against a particular mongo document by adding an _id filter
   var queryId = query.$query._id;
@@ -292,6 +302,13 @@ LiveDbMongo.prototype.queryNeedsPollMode = function(index, query) {
 
 
 // Utility methods
+
+// Return error string on error. Query should already be normalized with
+// normalizeQuery below.
+LiveDbMongo.prototype.checkQuery = function(query) {
+  if (!this.allowWhereQuery && query.$query.$where != null)
+    return "Illegal $where query";
+};
 
 function extractCursorMethods(query) {
   var out = [];
