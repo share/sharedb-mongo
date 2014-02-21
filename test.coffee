@@ -44,7 +44,7 @@ describe 'mongo', ->
                 return done()
 
             throw Error "Could not find index in ops db - #{JSON.stringify(indexes)}"
-        , 100
+        , 400
 
     it 'does not allow editing the system collection', (done) -> create (db) =>
       db.writeSnapshot 'system', 'test', {x:5}, (err) ->
