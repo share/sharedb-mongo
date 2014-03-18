@@ -2,6 +2,7 @@ var _require = require;
 var mongoskin = _require('mongoskin');
 var assert = require('assert');
 var async = require('async');
+var util = require('util');
 
 var metaOperators = {
   $comment: true
@@ -36,7 +37,7 @@ var cursorOperators = {
  * var db = require('livedb-mongo')(skin);
  */
 exports = module.exports = function(mongo, options) {
-  if (typeof mongo !== 'object') {
+  if (util.isArray(mongo) || typeof mongo !== 'object') {
     mongo = mongoskin.db.apply(mongoskin.db, arguments);
   }
   return new LiveDbMongo(mongo, options);
