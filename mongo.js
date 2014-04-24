@@ -55,6 +55,9 @@ function LiveDbMongo(mongo, options) {
   if (options && options.mongoPoll) {
     this.mongoPoll = options.mongoPoll;
   }
+  if (options && options.cleanupOps) {
+    this.cleanupOps = options.cleanupOps;
+  }
 
   // The getVersion() and getOps() methods depend on a collectionname_ops
   // collection, and that collection should have an index on the operations
@@ -66,7 +69,8 @@ function LiveDbMongo(mongo, options) {
 
   // map from collection name -> true for op collections we've ensureIndex'ed
   this.opIndexes = {};
-
+  // mongo collections cache, map name -> collection
+  this.collectionsCache = {};
   // Allow $while queries. They're a security hole because you can run
   // server-side javascript.
   this.allowWhereQuery = options ? (options.allowWhereQuery || false) : false;
@@ -91,7 +95,7 @@ LiveDbMongo.prototype._check = function(cName) {
 
 LiveDbMongo.prototype.getSnapshot = function(cName, docName, callback) {
   var err; if (err = this._check(cName)) return callback(err);
-  this.mongo.collection(cName).findOne({_id: docName}, function(err, doc) {
+  this.collection(cName).findOne({_id: docName}, function(err, doc) {
     callback(err, castToSnapshot(doc));
   });
 };
@@ -127,7 +131,7 @@ LiveDbMongo.prototype.bulkGetSnapshot = function(requests, callback) {
 LiveDbMongo.prototype.writeSnapshot = function(cName, docName, data, callback) {
   var err; if (err = this._check(cName)) return callback(err);
   var doc = castToDoc(docName, data);
-  this.mongo.collection(cName).update({_id: docName}, doc, {upsert: true}, callback);
+  this.collection(cName).update({_id: docName}, doc, {upsert: true}, callback);
 };
 
 
@@ -139,19 +143,35 @@ LiveDbMongo.prototype.getOplogCollectionName = function(cName) {
   return cName + '_ops';
 };
 
+// Get and return the base collection from mongo
+LiveDbMongo.prototype.collection = function(cName) {
+  if (this.collectionsCache[cName]) {
+    return this.collectionsCache[cName];
+  }
+  return this.collectionsCache[cName] = this.mongo.collection(cName);
+};
+
 // Get and return the op collection from mongo, ensuring it has the op index.
 LiveDbMongo.prototype._opCollection = function(cName) {
-  var collection = this.mongo.collection(this.getOplogCollectionName(cName));
+  var name = this.getOplogCollectionName(cName);
+  if (this.collectionsCache[name]) {
+    return this.collectionsCache[name];
+  }
+  var collection = this.mongo.collection(name);
 
   if (!this.opIndexes[cName]) {
     collection.ensureIndex({name: 1, v: 1}, true, function(error, name) {
       if (error) console.warn('Warning: Could not create index for op collection:', error.stack || error);
     });
+    if (this.cleanupOps) {
+      collection.ensureIndex({'m.e': 1}, {background: true, expireAfterSeconds: this.cleanupOps}, function(error, name) {
+        if (error) console.warn('Warning: Could not create index for op collection:', error.stack || error);
+      });
+    }
 
     this.opIndexes[cName] = true;
   }
-
-  return collection;
+  return this.collectionsCache[name] = collection;
 };
 
 LiveDbMongo.prototype.writeOp = function(cName, docName, opData, callback) {
@@ -163,6 +183,9 @@ LiveDbMongo.prototype.writeOp = function(cName, docName, opData, callback) {
   var data = shallowClone(opData);
   data._id = docName + ' v' + opData.v,
   data.name = docName;
+  if (this.cleanupOps) {
+    data.m.e = new Date();
+  }
 
   this._opCollection(cName).save(data, callback);
 };
@@ -276,7 +299,7 @@ LiveDbMongo.prototype.queryDoc = function(livedb, index, cName, docName, inputQu
     query.$query._id = docName;
   }
 
-  this.mongo.collection(cName).findOne(query, function(err, doc) {
+  this.collection(cName).findOne(query, function(err, doc) {
     callback(err, castToSnapshot(doc));
   });
 };
