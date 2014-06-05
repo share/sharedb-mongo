@@ -16,6 +16,7 @@ var metaOperators = {
 , $showDiskLoc: true
 , $snapshot: true
 , $count: true
+, $mapReduce: true
 };
 
 var cursorOperators = {
@@ -216,39 +217,45 @@ LiveDbMongo.prototype.getOps = function(cName, docName, start, end, callback) {
 
 // Internal method to actually run the query.
 LiveDbMongo.prototype._query = function(mongo, cName, query, fields, callback) {
-  // For count queries, don't run the find() at all. We also ignore the projection, since its not
-  // relevant.
-  if (query.$count) {
-    delete query.$count;
-    mongo.collection(cName).count(query.$query || {}, function(err, count) {
-      if (err) return callback(err);
+    if (query.$mapReduce) {
+        delete query.$mapReduce;
+        mongo.collection(cName).mapReduce(query.$map, query.$reduce, query.$query || {}, function (err, mapReduce) {
+            if (err) return callback(err);
+            callback(err, {results: [], extra: mapReduce});
+        });
+    } else
+    // For count queries, don't run the find() at all. We also ignore the projection, since its not
+    // relevant.
+    if (query.$count) {
+        delete query.$count;
+        mongo.collection(cName).count(query.$query || {}, function (err, count) {
+            if (err) return callback(err);
 
-      // This API is kind of awful. FIXME in livedb.
-      callback(err, {results:[], extra:count});
-    });
-  } else {
-    var cursorMethods = extractCursorMethods(query);
+            // This API is kind of awful. FIXME in livedb.
+            callback(err, {results: [], extra: count});
+        });
+    } else {
+        var cursorMethods = extractCursorMethods(query);
 
-    // Weirdly, if the requested projection is empty, we send everything.
-    var projection = fields ? projectionFromFields(fields) : {};
+        // Weirdly, if the requested projection is empty, we send everything.
+        var projection = fields ? projectionFromFields(fields) : {};
 
-    mongo.collection(cName).find(query, projection, function(err, cursor) {
-      if (err) return callback(err);
+        mongo.collection(cName).find(query, projection, function (err, cursor) {
+            if (err) return callback(err);
 
-      for (var i = 0; i < cursorMethods.length; i++) {
-        var item = cursorMethods[i];
-        var method = item[0];
-        var arg = item[1];
-        cursor[method](arg);
-      }
+            for (var i = 0; i < cursorMethods.length; i++) {
+                var item = cursorMethods[i];
+                var method = item[0];
+                var arg = item[1];
+                cursor[method](arg);
+            }
 
-      cursor.toArray(function(err, results) {
-        results = results && results.map(castToSnapshot);
-        callback(err, results);
-      });
-    });
-  }
-
+            cursor.toArray(function (err, results) {
+                results = results && results.map(castToSnapshot);
+                callback(err, results);
+            });
+        });
+    }
 };
 
 LiveDbMongo.prototype.query = function(livedb, cName, inputQuery, opts, callback) {
