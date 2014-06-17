@@ -100,6 +100,19 @@ LiveDbMongo.prototype.getSnapshot = function(cName, docName, callback) {
   });
 };
 
+// Variant on getSnapshot (above) which projects the returned document
+LiveDbMongo.prototype.getSnapshotProjected = function(cName, docName, fields, callback) {
+  var err; if (err = this._check(cName)) return callback(err);
+
+  // This code depends on the document being stored in the efficient way (which is to say, we've
+  // promoted all fields in mongo). This will only work properly for json documents - which happen
+  // to be the only types that we really want projections for.
+  var projection = projectionFromFields(fields);
+  this.mongo.collection(cName).findOne({_id: docName}, projection, function(err, doc) {
+    callback(err, castToSnapshot(doc));
+  });
+};
+
 LiveDbMongo.prototype.bulkGetSnapshot = function(requests, callback) {
   if (this.closed) return callback('db already closed');
 
@@ -225,8 +238,9 @@ LiveDbMongo.prototype.getOps = function(cName, docName, start, end, callback) {
 // ***** Query methods
 
 // Internal method to actually run the query.
-LiveDbMongo.prototype._query = function(mongo, cName, query, callback) {
-  // For count queries, don't run the find() at all.
+LiveDbMongo.prototype._query = function(mongo, cName, query, fields, callback) {
+  // For count queries, don't run the find() at all. We also ignore the projection, since its not
+  // relevant.
   if (query.$count) {
     delete query.$count;
     mongo.collection(cName).count(query.$query || {}, function(err, count) {
@@ -238,7 +252,10 @@ LiveDbMongo.prototype._query = function(mongo, cName, query, callback) {
   } else {
     var cursorMethods = extractCursorMethods(query);
 
-    mongo.collection(cName).find(query, function(err, cursor) {
+    // Weirdly, if the requested projection is empty, we send everything.
+    var projection = fields ? projectionFromFields(fields) : {};
+
+    mongo.collection(cName).find(query, projection, function(err, cursor) {
       if (err) return callback(err);
 
       for (var i = 0; i < cursorMethods.length; i++) {
@@ -258,6 +275,12 @@ LiveDbMongo.prototype._query = function(mongo, cName, query, callback) {
 };
 
 LiveDbMongo.prototype.query = function(livedb, cName, inputQuery, opts, callback) {
+  // Regular queries are just a special case of queryProjected, but with fields=null (which livedb
+  // will never pass naturally).
+  this.queryProjected(livedb, cName, null, inputQuery, opts, callback);
+};
+
+LiveDbMongo.prototype.queryProjected = function(livedb, cName, fields, inputQuery, opts, callback) {
   var err; if (err = this._check(cName)) return callback(err);
 
   // To support livedb <=0.2.8
@@ -277,14 +300,14 @@ LiveDbMongo.prototype.query = function(livedb, cName, inputQuery, opts, callback
     // data out to the polling target replica.
     setTimeout(function() {
       if (self.closed) return callback('db already closed');
-      self._query(self.mongoPoll, cName, query, callback);
+      self._query(self.mongoPoll, cName, query, fields, callback);
     }, 300);
   } else {
-    this._query(this.mongo, cName, query, callback);
+    this._query(this.mongo, cName, query, fields, callback);
   }
 };
 
-LiveDbMongo.prototype.queryDoc = function(livedb, index, cName, docName, inputQuery, callback) {
+LiveDbMongo.prototype.queryDocProjected = function(livedb, index, cName, docName, fields, inputQuery, callback) {
   var err;
   if (err = this._check(cName)) return callback(err);
   var query = normalizeQuery(inputQuery);
@@ -299,9 +322,14 @@ LiveDbMongo.prototype.queryDoc = function(livedb, index, cName, docName, inputQu
     query.$query._id = docName;
   }
 
-  this.collection(cName).findOne(query, function(err, doc) {
+  var projection = fields ? projectionFromFields(fields) : {};
+  this.mongo.collection(cName).findOne(query, projection, function(err, doc) {
     callback(err, castToSnapshot(doc));
   });
+};
+
+LiveDbMongo.prototype.queryDoc = function(livedb, index, cName, docName, inputQuery, callback) {
+  this.queryDocProjected(livedb, index, cName, docName, null, inputQuery, callback);
 };
 
 // Test whether an operation will make the document its applied to match the
@@ -423,3 +451,18 @@ function shallowClone(object) {
   }
   return out;
 }
+
+// The fields property is already pretty perfect for mongo. This will only work for JSON documents.
+function projectionFromFields(fields) {
+  var projection = {};
+  for (var k in fields) {
+    projection[k] = 1;
+  }
+  projection._v = 1;
+  projection._type = 1;
+  projection._m = 1;
+
+  return projection;
+}
+
+
