@@ -24,7 +24,7 @@ would pass to mongoskin:
 
 ```javascript
 var livedbmongo = require('livedb-mongo');
-var mongo = livedbmongo('localhost:27017/test?auto_reconnect', {safe:true});
+var mongo = livedbmongo('mongodb://localhost:27017/test?auto_reconnect', {safe:true});
 
 var livedb = require('livedb').client(mongo); // Or whatever. See livedb's docs.
 ```
@@ -33,7 +33,7 @@ If you prefer, you can instead create a mongoskin instance yourself and pass it 
 
 ```javascript
 var mongoskin = require('mongoskin');
-var skin = mongoskin('localhost:27017/test?auto_reconnect', {safe:true});
+var skin = mongoskin('mongodb://localhost:27017/test?auto_reconnect', {safe:true});
 
 var livedbmongo = require('livedb-mongo');
 var mongo = livedbmongo(skin);
