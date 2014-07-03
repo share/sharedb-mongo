@@ -300,9 +300,21 @@ LiveDbMongo.prototype.queryDocProjected = function(livedb, index, cName, docName
   }
 
   var projection = fields ? projectionFromFields(fields) : {};
-  this.mongo.collection(cName).findOne(query, projection, function(err, doc) {
+
+  function cb(err, doc) {
     callback(err, castToSnapshot(doc));
-  });
+  }
+
+  if (this.mongoPoll) {
+    var self = this;
+    // Blah vomit - same dodgy hack as in queryProjected above.
+    setTimeout(function() {
+      if (self.closed) return callback('db already closed');
+      self.mongoPoll.collection(cName).findOne(query, projection, cb);
+    }, 300);
+  } else {
+    this.mongo.collection(cName).findOne(query, projection, cb);
+  }
 };
 
 LiveDbMongo.prototype.queryDoc = function(livedb, index, cName, docName, inputQuery, callback) {
