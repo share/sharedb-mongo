@@ -53,6 +53,15 @@ describe 'mongo', ->
           assert.equal data, null
           done()
 
+    it 'defaults to the version of the document if there are no ops', (done) ->
+      @db.writeSnapshot 'testcollection', 'versiontest', {type: 'json0', v: 3, data:{x:5}}, (err) =>
+        throw Error err if err
+        @db.getVersion 'testcollection', 'versiontest', (err, v) =>
+          throw Error err if err
+          assert.equal v, 3
+          done()
+
+
     describe 'query', ->
       it 'returns data in the collection', (done) ->
         snapshot = {type:'json0', v:5, m:{}, data:{x:5, y:6}}

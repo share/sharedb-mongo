@@ -183,11 +183,15 @@ LiveDbMongo.prototype.writeOp = function(cName, docName, opData, callback) {
 LiveDbMongo.prototype.getVersion = function(cName, docName, callback) {
   var err; if (err = this._check(cName)) return callback(err);
 
+  var self = this;
   this._opCollection(cName).findOne({name:docName}, {sort:{v:-1}}, function(err, data) {
     if (err) return callback(err);
 
     if (data == null) {
-      callback(null, 0);
+      self.mongo.collection(cName).findOne({_id: docName}, {_v:1}, function(err, doc) {
+        if (err) return callback(err);
+        callback(null, doc ? doc._v : 0);
+      });
     } else {
       callback(err, data.v + 1);
     }
