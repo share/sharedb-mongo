@@ -5,7 +5,7 @@ assert = require 'assert'
 
 # Clear mongo
 clear = (callback) ->
-  mongo = mongoskin.db 'localhost:27017/test?auto_reconnect', safe:true
+  mongo = mongoskin.db 'mongodb://localhost:27017/test?auto_reconnect', safe:true
   mongo.dropCollection 'testcollection', ->
     mongo.dropCollection 'testcollection_ops', ->
       mongo.close()
@@ -14,14 +14,14 @@ clear = (callback) ->
 
 create = (callback) ->
   clear ->
-    callback liveDbMongo 'localhost:27017/test?auto_reconnect', safe: false
+    callback liveDbMongo 'mongodb://localhost:27017/test?auto_reconnect', safe: false
 
 describe 'mongo', ->
   afterEach clear
 
   describe 'raw', ->
     beforeEach (done) ->
-      @mongo = mongoskin.db 'localhost:27017/test?auto_reconnect', safe:true
+      @mongo = mongoskin.db 'mongodb://localhost:27017/test?auto_reconnect', safe:true
       create (@db) => done()
 
     afterEach ->

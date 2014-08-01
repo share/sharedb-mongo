@@ -4,11 +4,11 @@
   "description": "MongoDB database adapter for livedb",
   "main": "mongo.js",
   "dependencies": {
-    "mongoskin": "~0.5",
-    "async": "~0.2.9"
+    "async": "^0.9",
+    "mongoskin": "^1.4"
   },
   "devDependencies": {
-    "mocha": "~1",
+    "mocha": "^1",
     "coffee-script": "~1.7",
     "livedb": ">=0.3"
   },
