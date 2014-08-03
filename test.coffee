@@ -84,6 +84,64 @@ describe 'mongo', ->
           assert.equal results, null
           done()
 
+      it 'distinct should return distinct data', (done) ->
+        snapshots = [
+          {type:'json0', v:5, m:{}, data:{x:1, y:1}},
+          {type:'json0', v:5, m:{}, data:{x:2, y:2}},
+          {type:'json0', v:5, m:{}, data:{x:3, y:2}}
+        ]
+        @db.writeSnapshot 'testcollection', 'test1', snapshots[0], (err) =>
+          @db.writeSnapshot 'testcollection', 'test2', snapshots[1], (err) =>
+            @db.writeSnapshot 'testcollection', 'test3', snapshots[2], (err) =>
+              @db.query 'unused', 'testcollection', {$distinct: true, $field: 'y', $query: {}}, {}, (err, results) ->
+                throw Error err if err
+                assert.deepEqual results.extra, [1,2]
+                done()
+
+      it 'does not allow $mapReduce queries by default', (done) ->
+        snapshots = [
+          {type:'json0', v:5, m:{}, data:{player: 'a', round: 1, score: 5}},
+          {type:'json0', v:5, m:{}, data:{player: 'a', round: 2, score: 7}},
+          {type:'json0', v:5, m:{}, data:{player: 'b', round: 1, score: 15}}
+        ]
+        @db.writeSnapshot 'testcollection', 'test1', snapshots[0], (err) =>
+          @db.writeSnapshot 'testcollection', 'test2', snapshots[1], (err) =>
+            @db.writeSnapshot 'testcollection', 'test3', snapshots[2], (err) =>
+              @db.query 'unused', 'testcollection',
+                $mapReduce: true,
+                $map: () ->
+                  emit @.player, @score
+                $reduce: (key, values) ->
+                  values.reduce (t, s) -> t + s
+                $query: {}
+              , {}, (err, results) ->
+                assert.ok err
+                assert.equal results, null
+                done()
+
+      it '$mapReduce queries should work when allowJavaScriptQuery == true', (done) ->
+        snapshots = [
+          {type:'json0', v:5, m:{}, data:{player: 'a', round: 1, score: 5}},
+          {type:'json0', v:5, m:{}, data:{player: 'a', round: 2, score: 7}},
+          {type:'json0', v:5, m:{}, data:{player: 'b', round: 1, score: 15}}
+        ]
+        @db.allowJavaScriptQuery = true
+
+        @db.writeSnapshot 'testcollection', 'test1', snapshots[0], (err) =>
+          @db.writeSnapshot 'testcollection', 'test2', snapshots[1], (err) =>
+            @db.writeSnapshot 'testcollection', 'test3', snapshots[2], (err) =>
+              @db.query 'unused', 'testcollection',
+                $mapReduce: true,
+                $map: () ->
+                  emit @.player, @score
+                $reduce: (key, values) ->
+                  values.reduce (t, s) -> t + s
+                $query: {}
+              , {}, (err, results) ->
+                throw Error err if err
+                assert.deepEqual results.extra, [{_id: 'a', value: 12}, {_id: 'b', value: 15}]
+                done()
+
     describe 'queryProjected', ->
       it 'returns only projected fields', (done) ->
         @db.writeSnapshot 'testcollection', 'test', {type:'json0', v:5, m:{}, data:{x:5, y:6}}, (err) =>
