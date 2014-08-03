@@ -67,8 +67,8 @@ function LiveDbMongo(mongo, options) {
   // map from collection name -> true for op collections we've ensureIndex'ed
   this.opIndexes = {};
 
-  // Allow $while and $mapReduce queries. They're a security hole because
-  // you can run server-side javascript.
+  // Allow $while and $mapReduce queries. They're a possible security hole 
+  // because you can run server-side javascript.
   this.allowJavaScriptQuery = options ? (options.allowJavaScriptQuery || false) : false;
 }
 
