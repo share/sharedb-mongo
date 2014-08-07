@@ -67,9 +67,9 @@ function LiveDbMongo(mongo, options) {
   // map from collection name -> true for op collections we've ensureIndex'ed
   this.opIndexes = {};
 
-  // Allow $while queries. They're a security hole because you can run
-  // server-side javascript.
-  this.allowWhereQuery = options ? (options.allowWhereQuery || false) : false;
+  // Allow $while and $mapReduce queries. They're a possible security hole 
+  // because you can run server-side javascript.
+  this.allowJavaScriptQuery = options ? (options.allowJavaScriptQuery || false) : false;
 }
 
 LiveDbMongo.prototype.close = function(callback) {
@@ -230,6 +230,26 @@ LiveDbMongo.prototype._query = function(mongo, cName, query, fields, callback) {
       // This API is kind of awful. FIXME in livedb.
       callback(err, {results:[], extra:count});
     });
+  } else if (query.$distinct) {
+    delete query.$distinct;
+    mongo.collection(cName).distinct(query.$field, query.$query || {}, function(err, result) {
+      if (err) return callback(err);
+
+      callback(err, {results:[], extra:result});
+    });
+  } else if (query.$mapReduce) {
+    delete query.$mapReduce;
+
+    var opt = {
+      query: query.$query || {},
+      out: {inline: 1},
+      scope: query.$scope || {}
+    };
+
+    mongo.collection(cName).mapReduce(query.$map, query.$reduce, opt, function (err, mapReduce) {
+      if (err) return callback(err);
+      callback(err, {results: [], extra: mapReduce});
+    });
   } else {
     var cursorMethods = extractCursorMethods(query);
 
@@ -351,8 +371,13 @@ LiveDbMongo.prototype.queryNeedsPollMode = function(index, query) {
 // Return error string on error. Query should already be normalized with
 // normalizeQuery below.
 LiveDbMongo.prototype.checkQuery = function(query) {
-  if (!this.allowWhereQuery && query.$query.$where != null)
-    return "Illegal $where query";
+  if (!this.allowJavaScriptQuery) {
+    if (query.$query.$where != null)
+      return "Illegal $where query";
+    if (query.$mapReduce != null)
+      return "Illegal $mapReduce query";
+  }
+
 };
 
 function extractCursorMethods(query) {
