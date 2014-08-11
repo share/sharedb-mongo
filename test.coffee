@@ -84,7 +84,7 @@ describe 'mongo', ->
           assert.equal results, null
           done()
 
-      it 'distinct should return distinct data', (done) ->
+      it '$distinct should perform distinct operation', (done) ->
         snapshots = [
           {type:'json0', v:5, m:{}, data:{x:1, y:1}},
           {type:'json0', v:5, m:{}, data:{x:2, y:2}},
@@ -98,6 +98,20 @@ describe 'mongo', ->
                 assert.deepEqual results.extra, [1,2]
                 done()
 
+      it '$aggregate should perform aggregate command', (done) ->
+        snapshots = [
+          {type:'json0', v:5, m:{}, data:{x:1, y:1}},
+          {type:'json0', v:5, m:{}, data:{x:2, y:2}},
+          {type:'json0', v:5, m:{}, data:{x:3, y:2}}
+        ]
+        @db.writeSnapshot 'testcollection', 'test1', snapshots[0], (err) =>
+          @db.writeSnapshot 'testcollection', 'test2', snapshots[1], (err) =>
+            @db.writeSnapshot 'testcollection', 'test3', snapshots[2], (err) =>
+              @db.query 'unused', 'testcollection', {$aggregate: [{$group: {_id: '$y', count: {$sum: 1}}}, {$sort: {count: 1}}]}, {}, (err, results) ->
+                throw Error err if err
+                assert.deepEqual results.extra, [{_id: 1, count: 1}, {_id: 2, count: 2}]
+                done()
+
       it 'does not allow $mapReduce queries by default', (done) ->
         snapshots = [
           {type:'json0', v:5, m:{}, data:{player: 'a', round: 1, score: 5}},
@@ -109,7 +123,7 @@ describe 'mongo', ->
             @db.writeSnapshot 'testcollection', 'test3', snapshots[2], (err) =>
               @db.query 'unused', 'testcollection',
                 $mapReduce: true,
-                $map: () ->
+                $map: ->
                   emit @.player, @score
                 $reduce: (key, values) ->
                   values.reduce (t, s) -> t + s
@@ -132,7 +146,7 @@ describe 'mongo', ->
             @db.writeSnapshot 'testcollection', 'test3', snapshots[2], (err) =>
               @db.query 'unused', 'testcollection',
                 $mapReduce: true,
-                $map: () ->
+                $map: ->
                   emit @.player, @score
                 $reduce: (key, values) ->
                   values.reduce (t, s) -> t + s
