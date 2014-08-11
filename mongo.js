@@ -16,6 +16,7 @@ var metaOperators = {
 , $showDiskLoc: true
 , $snapshot: true
 , $count: true
+, $aggregate: true
 };
 
 var cursorOperators = {
@@ -67,7 +68,7 @@ function LiveDbMongo(mongo, options) {
   // map from collection name -> true for op collections we've ensureIndex'ed
   this.opIndexes = {};
 
-  // Allow $while and $mapReduce queries. They're a possible security hole 
+  // Allow $while and $mapReduce queries. They're a possible security hole
   // because you can run server-side javascript.
   this.allowJavaScriptQuery = options ? (options.allowJavaScriptQuery || false) : false;
 }
@@ -226,17 +227,23 @@ LiveDbMongo.prototype._query = function(mongo, cName, query, fields, callback) {
     delete query.$count;
     mongo.collection(cName).count(query.$query || {}, function(err, count) {
       if (err) return callback(err);
-
       // This API is kind of awful. FIXME in livedb.
       callback(err, {results:[], extra:count});
     });
+
   } else if (query.$distinct) {
     delete query.$distinct;
     mongo.collection(cName).distinct(query.$field, query.$query || {}, function(err, result) {
       if (err) return callback(err);
-
       callback(err, {results:[], extra:result});
     });
+
+  } else if (query.$aggregate) {
+    mongo.collection(cName).aggregate(query.$aggregate, function(err, result) {
+      if (err) return callback(err);
+      callback(err, {results:[], extra:result});
+    });
+
   } else if (query.$mapReduce) {
     delete query.$mapReduce;
 
@@ -250,6 +257,7 @@ LiveDbMongo.prototype._query = function(mongo, cName, query, fields, callback) {
       if (err) return callback(err);
       callback(err, {results: [], extra: mapReduce});
     });
+
   } else {
     var cursorMethods = extractCursorMethods(query);
 
