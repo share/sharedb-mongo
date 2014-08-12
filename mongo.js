@@ -53,9 +53,9 @@ function LiveDbMongo(mongo, options) {
   this.mongo = mongo;
   this.closed = false;
 
-  if (options && options.mongoPoll) {
-    this.mongoPoll = options.mongoPoll;
-  }
+  if (!options) options = {};
+
+  this.mongoPoll = options.mongoPoll || null;
 
   // The getVersion() and getOps() methods depend on a collectionname_ops
   // collection, and that collection should have an index on the operations
@@ -68,9 +68,14 @@ function LiveDbMongo(mongo, options) {
   // map from collection name -> true for op collections we've ensureIndex'ed
   this.opIndexes = {};
 
-  // Allow $while and $mapReduce queries. They're a possible security hole
-  // because you can run server-side javascript.
-  this.allowJavaScriptQuery = options ? (options.allowJavaScriptQuery || false) : false;
+  // Allow $while and $mapReduce queries. These queries let you run arbitrary
+  // JS on the server. If users make these queries from the browser, there's
+  // security issues.
+  this.allowJSQueries = options.allowAllQueries || options.allowJSQueries || options.allowJavaScriptQuery || false;
+
+  // Aggregate queries are less dangerous, but you can use them to access any
+  // data in the mongo database.
+  this.allowAggregateQueries = options.allowAllQueries || options.allowAggregateQueries;
 }
 
 LiveDbMongo.prototype.close = function(callback) {
@@ -379,13 +384,15 @@ LiveDbMongo.prototype.queryNeedsPollMode = function(index, query) {
 // Return error string on error. Query should already be normalized with
 // normalizeQuery below.
 LiveDbMongo.prototype.checkQuery = function(query) {
-  if (!this.allowJavaScriptQuery) {
+  if (!this.allowJSQueries) {
     if (query.$query.$where != null)
-      return "Illegal $where query";
+      return "$where queries disabled";
     if (query.$mapReduce != null)
-      return "Illegal $mapReduce query";
+      return "$mapReduce queries disabled";
   }
 
+  if (!this.allowAggregateQueries && query.$aggregate)
+    return "$aggregate queries disabled";
 };
 
 function extractCursorMethods(query) {

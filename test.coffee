@@ -104,6 +104,8 @@ describe 'mongo', ->
           {type:'json0', v:5, m:{}, data:{x:2, y:2}},
           {type:'json0', v:5, m:{}, data:{x:3, y:2}}
         ]
+        @db.allowAggregateQueries = true
+
         @db.writeSnapshot 'testcollection', 'test1', snapshots[0], (err) =>
           @db.writeSnapshot 'testcollection', 'test2', snapshots[1], (err) =>
             @db.writeSnapshot 'testcollection', 'test3', snapshots[2], (err) =>
@@ -111,6 +113,11 @@ describe 'mongo', ->
                 throw Error err if err
                 assert.deepEqual results.extra, [{_id: 1, count: 1}, {_id: 2, count: 2}]
                 done()
+
+      it 'does not let you run $aggregate queries without options.allowAggregateQueries', (done) ->
+        @db.query 'unused', 'testcollection', {$aggregate: [{$group: {_id: '$y', count: {$sum: 1}}}, {$sort: {count: 1}}]}, {}, (err, results) ->
+          assert.ok err
+          done()
 
       it 'does not allow $mapReduce queries by default', (done) ->
         snapshots = [
@@ -139,7 +146,7 @@ describe 'mongo', ->
           {type:'json0', v:5, m:{}, data:{player: 'a', round: 2, score: 7}},
           {type:'json0', v:5, m:{}, data:{player: 'b', round: 1, score: 15}}
         ]
-        @db.allowJavaScriptQuery = true
+        @db.allowJSQueries = true
 
         @db.writeSnapshot 'testcollection', 'test1', snapshots[0], (err) =>
           @db.writeSnapshot 'testcollection', 'test2', snapshots[1], (err) =>
