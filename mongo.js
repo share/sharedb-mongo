@@ -217,6 +217,14 @@ LiveDbMongo.prototype.getVersion = function(cName, docName, callback) {
   });
 };
 
+LiveDbMongo.prototype.cleanupDocOps = function(cName, docName, callback) {
+  var self = this;
+  this._opCollection(cName).remove({name:docName}, function (err) {
+    if (err) return callback(err);
+    self.mongo.collection(cName).remove({_id: docName});
+  });
+};
+
 LiveDbMongo.prototype.getOps = function(cName, docName, start, end, callback) {
   var err; if (err = this._check(cName)) return callback(err);
 
