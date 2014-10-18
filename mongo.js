@@ -56,6 +56,7 @@ function LiveDbMongo(mongo, options) {
   if (!options) options = {};
 
   this.mongoPoll = options.mongoPoll || null;
+  this.ttl = options.ttl || null;
 
   // The getVersion() and getOps() methods depend on a collectionname_ops
   // collection, and that collection should have an index on the operations
@@ -166,6 +167,12 @@ LiveDbMongo.prototype._opCollection = function(cName) {
     collection.ensureIndex({name: 1, v: 1}, true, function(error, name) {
       if (error) console.warn('Warning: Could not create index for op collection:', error.stack || error);
     });
+    
+    if (this.ttl) {
+      collection.ensureIndex({ 'm.d': 1 }, { expireAfterSeconds: this.ttl, background: true }, function(error) {
+        if (error) console.warn('Could not create ttl index for op collection: ', error.stack || error);
+      });
+    }
 
     this.opIndexes[cName] = true;
   }
@@ -182,6 +189,10 @@ LiveDbMongo.prototype.writeOp = function(cName, docName, opData, callback) {
   var data = shallowClone(opData);
   data._id = docName + ' v' + opData.v,
   data.name = docName;
+  if (this.ttl) {
+    if (!data.m) data.m = {};
+    data.m.d = new Date();
+  }
 
   this._opCollection(cName).save(data, callback);
 };

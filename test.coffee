@@ -44,6 +44,21 @@ describe 'mongo', ->
 
             throw Error "Could not find index in ops db - #{JSON.stringify(indexes)}"
         , 400
+        
+    it 'adds a ttl index for ops if given option', (done) -> clear =>
+      db = liveDbMongo 'mongodb://localhost:27017/test?auto_reconnect', safe: false, ttl: 10
+      db.writeOp 'testcollection', 'foo', {v:0, create:{type:'json0'}}, (err) =>
+        setTimeout =>
+          @mongo.collection('testcollection_ops').indexInformation (err, indexes) ->
+            throw err if err
+
+            # We should find an index with [ 'm.d', 1 ]
+            for name, idx of indexes
+              if JSON.stringify(idx) is '[["m.d",1]]'
+                return done()
+
+            throw Error "Could not find index in ops db - #{JSON.stringify(indexes)}"
+        , 400
 
     it 'does not allow editing the system collection', (done) ->
       @db.writeSnapshot 'system', 'test', {type:'json0', v:5, m:{}, data:{x:5}}, (err) =>
