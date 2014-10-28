@@ -221,7 +221,7 @@ LiveDbMongo.prototype.cleanupDocOps = function(cName, docName, callback) {
   var self = this;
   this._opCollection(cName).remove({name:docName}, function (err) {
     if (err) return callback(err);
-    self.mongo.collection(cName).remove({_id: docName});
+    self.mongo.collection(cName).remove({_id: docName}, callback);
   });
 };
 
