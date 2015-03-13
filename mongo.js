@@ -1,5 +1,4 @@
-var _require = require;
-var mongoskin = _require('mongoskin');
+var mongoskin = require('mongoskin');
 var assert = require('assert');
 var async = require('async');
 var util = require('util');
