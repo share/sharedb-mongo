@@ -44,6 +44,21 @@ describe 'mongo', ->
 
             throw Error "Could not find index in ops db - #{JSON.stringify(indexes)}"
         , 400
+        
+    it 'adds a ttl index for ops if given option', (done) -> clear =>
+      db = liveDbMongo 'mongodb://localhost:27017/test?auto_reconnect', safe: false, ttl: 10
+      db.writeOp 'testcollection', 'foo', {v:0, create:{type:'json0'}}, (err) =>
+        setTimeout =>
+          @mongo.collection('testcollection_ops').indexInformation (err, indexes) ->
+            throw err if err
+
+            # We should find an index with [ 'm.d', 1 ]
+            for name, idx of indexes
+              if JSON.stringify(idx) is '[["m.d",1]]'
+                return done()
+
+            throw Error "Could not find index in ops db - #{JSON.stringify(indexes)}"
+        , 400
 
     it 'does not allow editing the system collection', (done) ->
       @db.writeSnapshot 'system', 'test', {type:'json0', v:5, m:{}, data:{x:5}}, (err) =>
@@ -61,6 +76,100 @@ describe 'mongo', ->
           assert.equal v, 3
           done()
 
+    describe 'getOps', ->
+      it 'errors if ops are missing at the start of the range', (done) ->
+        @db.writeOp 'testcollection', 'test', {v:0, op:{test:1}}, (err) =>
+          throw Error err if err
+          @db.writeOp 'testcollection', 'test', {v:1, op:{test:2}}, (err) =>
+            throw Error err if err
+            
+            readOps = @db._readOps
+            @db._readOps = (cName, docName, start, end, callback) ->
+              readOps.call this, cName, docName, start, end, (err, ops) ->
+                callback err, ops.slice(1)
+              
+            @db.getOps 'testcollection', 'test', 0, null, (err, ops) =>
+              @db._readOps = readOps
+              assert.equal err, 'Missing operations'
+              done()
+              
+      it 'errors if ops are missing in the middle of the range', (done) ->
+        @db.writeOp 'testcollection', 'test', {v:0, op:{test:1}}, (err) =>
+          throw Error err if err
+          @db.writeOp 'testcollection', 'test', {v:1, op:{test:2}}, (err) =>
+            throw Error err if err
+            @db.writeOp 'testcollection', 'test', {v:2, op:{test:3}}, (err) =>
+              throw Error err if err
+            
+              readOps = @db._readOps
+              @db._readOps = (cName, docName, start, end, callback) ->
+                readOps.call this, cName, docName, start, end, (err, ops) ->
+                  callback err, [ops[0], ops[2]]
+              
+              @db.getOps 'testcollection', 'test', 0, null, (err, ops) =>
+                @db._readOps = readOps
+                assert.equal err, 'Missing operations'
+                done()
+                
+      it 'errors if ops are missing when end specified', (done) ->
+        @db.writeOp 'testcollection', 'test', {v:0, op:{test:1}}, (err) =>
+          throw Error err if err
+          @db.writeOp 'testcollection', 'test', {v:1, op:{test:2}}, (err) =>
+            throw Error err if err
+            
+            readOps = @db._readOps
+            @db._readOps = (cName, docName, start, end, callback) ->
+              readOps.call this, cName, docName, start, end, (err, ops) ->
+                callback err, ops.slice(1)
+              
+            @db.getOps 'testcollection', 'test', 0, 2, (err, ops) =>
+              @db._readOps = readOps
+              assert.equal err, 'Missing operations'
+              done()
+                
+      it 'errors if ops are missing when ops missing from range end', (done) ->
+        @db.writeOp 'testcollection', 'test', {v:0, op:{test:1}}, (err) =>
+          throw Error err if err
+              
+          @db.getOps 'testcollection', 'test', 0, 5, (err, ops) =>
+            assert.equal err, 'Missing operations'
+            done()
+            
+      it 'errors if there are no ops and snapshot version is larger than range start', (done) ->
+        @db.writeSnapshot 'testcollection', 'test', {type: 'json0', v: 3, data:{x:5}}, (err) =>
+          throw Error err if err
+          
+          @db.getOps 'testcollection', 'test', 0, null, (err, ops) =>
+            assert.equal err, 'Missing operations'
+            done()
+            
+      it 'handles race condition when ops are submitted at the same time as a getOps call', (done) ->
+        @db.writeSnapshot 'testcollection', 'test', {type: 'json0', v: 3, data:{x:5}}, (err) =>
+          throw Error err if err
+          
+          # simulate race condition by writing in getVersion
+          getVersion = @db.getVersion
+          @db.getVersion = (cName, docName, callback) ->
+            @writeOp 'testcollection', 'test', {v:3, op:{test:1}}, (err) =>
+              throw Error err if err
+              @getVersion = getVersion
+              @getVersion cName, docName, callback
+          
+          @db.getOps 'testcollection', 'test', 3, null, (err, ops) =>
+            throw Error err if err
+            assert.ok ops
+            assert.ok ops.length
+            done()
+            
+      it 'should return nothing if there are no ops, and version matches range start', (done) ->
+        @db.writeSnapshot 'testcollection', 'test', {type: 'json0', v: 3, data:{x:5}}, (err) =>
+          throw Error err if err
+          
+          @db.getOps 'testcollection', 'test', 3, null, (err, ops) =>
+            throw Error err if err
+            assert.ok ops
+            assert.equal ops.length, 0
+            done()
 
     describe 'query', ->
       it 'returns data in the collection', (done) ->

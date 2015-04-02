@@ -55,6 +55,7 @@ function LiveDbMongo(mongo, options) {
   if (!options) options = {};
 
   this.mongoPoll = options.mongoPoll || null;
+  this.ttl = options.ttl || null;
 
   // The getVersion() and getOps() methods depend on a collectionname_ops
   // collection, and that collection should have an index on the operations
@@ -165,6 +166,12 @@ LiveDbMongo.prototype._opCollection = function(cName) {
     collection.ensureIndex({name: 1, v: 1}, true, function(error, name) {
       if (error) console.warn('Warning: Could not create index for op collection:', error.stack || error);
     });
+    
+    if (this.ttl) {
+      collection.ensureIndex({ 'm.d': 1 }, { expireAfterSeconds: this.ttl, background: true }, function(error) {
+        if (error) console.warn('Could not create ttl index for op collection: ', error.stack || error);
+      });
+    }
 
     this.opIndexes[cName] = true;
   }
@@ -181,6 +188,10 @@ LiveDbMongo.prototype.writeOp = function(cName, docName, opData, callback) {
   var data = shallowClone(opData);
   data._id = docName + ' v' + opData.v,
   data.name = docName;
+  if (this.ttl) {
+    if (!data.m) data.m = {};
+    data.m.d = new Date();
+  }
 
   this._opCollection(cName).save(data, callback);
 };
@@ -203,21 +214,75 @@ LiveDbMongo.prototype.getVersion = function(cName, docName, callback) {
   });
 };
 
+// Exported for testing
+LiveDbMongo.prototype._readOps = function(cName, docName, start, end, callback) {
+  var query = end == null ? {$gte:start} : {$gte:start, $lt:end};
+  this._opCollection(cName).find({name:docName, v:query}, {sort:{v:1}}).toArray(callback);
+};
+
 LiveDbMongo.prototype.getOps = function(cName, docName, start, end, callback) {
   var err; if (err = this._check(cName)) return callback(err);
 
-  var query = end == null ? {$gte:start} : {$gte:start, $lt:end};
-  this._opCollection(cName).find({name:docName, v:query}, {sort:{v:1}}).toArray(function(err, data) {
-    if (err) return callback(err);
-
+  var retried = false;
+  var self = this;
+  
+  function retry() {
+    // First, attempt to get the requested ops from the op collection
+    self._readOps(cName, docName, start, end, function(err, data) {
+      if (err) return callback(err);
+      
+      // If we didn't get any ops, and we don't know the end of the range requested,
+      // then we need to get the document version to check if ops were expected.
+      if (data.length === 0 && end == null) {
+        // If we already retried (see below for why), 
+        // then ops are missing from the requested range.
+        if (retried)
+          return callback('Missing operations');
+        
+        // Get the current snapshot version
+        self.getVersion(cName, docName, function(err, v) {
+          if (err) return callback(err);
+          
+          // Race condition! If the version returned is greater than the start
+          // of the requested range (and we got no ops above), an op may have
+          // been submitted between when we got ops and when we got the version.
+          // Retry to get the missing ops.
+          if (v > start) {
+            retried = true;
+            retry();
+          } else {
+            done(data);
+          }
+        });
+      } else {
+        done(data);
+      }
+    });
+  }
+  
+  function done(data) {
+    // If we know the end of the requested op range, check that we got the right number.
+    if (end != null) {
+      var expectedLength = start >= end ? 0 : end - start;
+      if (data.length !== expectedLength)
+        return callback('Missing operations');
+    }
+        
+    var v = start;
     for (var i = 0; i < data.length; i++) {
+      // Check that we got ops in the right order with none missing.
+      if (data[i].v !== v++)
+        return callback('Missing operations');
+      
       // Strip out _id in the results
       delete data[i]._id;
       delete data[i].name;
     }
+    
     callback(null, data);
-  });
+  }
 
+  retry();
 };
 
 
