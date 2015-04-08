@@ -28,22 +28,17 @@ describe 'mongo', ->
       @mongo.close()
 
     it 'adds an index for ops', (done) -> create (db) =>
+
       db.writeOp 'testcollection', 'foo', {v:0, create:{type:'json0'}}, (err) =>
-        # The problem here is that the index might not have been created yet if
-        # the database is busy, which makes this test flakey. I'll put a
-        # setTimeout for now, but if there's more problems, it might have to be
-        # rewritten.
-        setTimeout =>
-          @mongo.collection('testcollection_ops').indexInformation (err, indexes) ->
-            throw err if err
+        @db.collection('testcollection_ops').indexInformation (err, indexes) ->
+          throw err if err
 
-            # We should find an index with [[ 'name', 1 ], [ 'v', 1 ]]
-            for name, idx of indexes
-              if JSON.stringify(idx) is '[["name",1],["v",1]]'
-                return done()
+          # We should find an index with [[ 'name', 1 ], [ 'v', 1 ]]
+          for name, idx of indexes
+            if JSON.stringify(idx) is '[["name",1],["v",1]]'
+               return done()
 
-            throw Error "Could not find index in ops db - #{JSON.stringify(indexes)}"
-        , 400
+          throw Error "Could not find index in ops db - #{JSON.stringify(indexes)}"
 
     it 'does not allow editing the system collection', (done) ->
       @db.writeSnapshot 'system', 'test', {type:'json0', v:5, m:{}, data:{x:5}}, (err) =>
@@ -231,4 +226,3 @@ describe 'mongo', ->
 
   require('livedb/test/snapshotdb') create
   require('livedb/test/oplog') create
-
