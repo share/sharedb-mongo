@@ -1,5 +1,4 @@
-var _require = require;
-var mongoskin = _require('mongoskin');
+var mongoskin = require('mongoskin');
 var assert = require('assert');
 var async = require('async');
 var util = require('util');
@@ -16,6 +15,7 @@ var metaOperators = {
 , $showDiskLoc: true
 , $snapshot: true
 , $count: true
+, $aggregate: true
 };
 
 var cursorOperators = {
@@ -52,12 +52,10 @@ function LiveDbMongo(mongo, options) {
   this.mongo = mongo;
   this.closed = false;
 
-  if (options && options.mongoPoll) {
-    this.mongoPoll = options.mongoPoll;
-  }
-  if (options && options.cleanupOps) {
-    this.cleanupOps = options.cleanupOps;
-  }
+  if (!options) options = {};
+
+  this.mongoPoll = options.mongoPoll || null;
+  this.cleanupOps = options.cleanupOps || null;
 
   // The getVersion() and getOps() methods depend on a collectionname_ops
   // collection, and that collection should have an index on the operations
@@ -71,9 +69,15 @@ function LiveDbMongo(mongo, options) {
   this.opIndexes = {};
   // mongo collections cache, map name -> collection
   this.collectionsCache = {};
-  // Allow $while queries. They're a security hole because you can run
-  // server-side javascript.
-  this.allowWhereQuery = options ? (options.allowWhereQuery || false) : false;
+
+  // Allow $while and $mapReduce queries. These queries let you run arbitrary
+  // JS on the server. If users make these queries from the browser, there's
+  // security issues.
+  this.allowJSQueries = options.allowAllQueries || options.allowJSQueries || options.allowJavaScriptQuery || false;
+
+  // Aggregate queries are less dangerous, but you can use them to access any
+  // data in the mongo database.
+  this.allowAggregateQueries = options.allowAllQueries || options.allowAggregateQueries;
 }
 
 LiveDbMongo.prototype.close = function(callback) {
@@ -206,11 +210,15 @@ LiveDbMongo.prototype.writeOp = function(cName, docName, opData, callback) {
 LiveDbMongo.prototype.getVersion = function(cName, docName, callback) {
   var err; if (err = this._check(cName)) return callback(err);
 
+  var self = this;
   this._opCollection(cName).findOne({name:docName}, {sort:{v:-1}}, function(err, data) {
     if (err) return callback(err);
 
     if (data == null) {
-      callback(null, 0);
+      self.mongo.collection(cName).findOne({_id: docName}, {_v:1}, function(err, doc) {
+        if (err) return callback(err);
+        callback(null, doc ? doc._v : 0);
+      });
     } else {
       callback(err, data.v + 1);
     }
@@ -253,10 +261,37 @@ LiveDbMongo.prototype._query = function(mongo, cName, query, fields, callback) {
     delete query.$count;
     mongo.collection(cName).count(query.$query || {}, function(err, count) {
       if (err) return callback(err);
-
       // This API is kind of awful. FIXME in livedb.
       callback(err, {results:[], extra:count});
     });
+
+  } else if (query.$distinct) {
+    delete query.$distinct;
+    mongo.collection(cName).distinct(query.$field, query.$query || {}, function(err, result) {
+      if (err) return callback(err);
+      callback(err, {results:[], extra:result});
+    });
+
+  } else if (query.$aggregate) {
+    mongo.collection(cName).aggregate(query.$aggregate, function(err, result) {
+      if (err) return callback(err);
+      callback(err, {results:[], extra:result});
+    });
+
+  } else if (query.$mapReduce) {
+    delete query.$mapReduce;
+
+    var opt = {
+      query: query.$query || {},
+      out: {inline: 1},
+      scope: query.$scope || {}
+    };
+
+    mongo.collection(cName).mapReduce(query.$map, query.$reduce, opt, function (err, mapReduce) {
+      if (err) return callback(err);
+      callback(err, {results: [], extra: mapReduce});
+    });
+
   } else {
     var cursorMethods = extractCursorMethods(query);
 
@@ -331,9 +366,21 @@ LiveDbMongo.prototype.queryDocProjected = function(livedb, index, cName, docName
   }
 
   var projection = fields ? projectionFromFields(fields) : {};
-  this.mongo.collection(cName).findOne(query, projection, function(err, doc) {
+
+  function cb(err, doc) {
     callback(err, castToSnapshot(doc));
-  });
+  }
+
+  if (this.mongoPoll) {
+    var self = this;
+    // Blah vomit - same dodgy hack as in queryProjected above.
+    setTimeout(function() {
+      if (self.closed) return callback('db already closed');
+      self.mongoPoll.collection(cName).findOne(query, projection, cb);
+    }, 300);
+  } else {
+    this.mongo.collection(cName).findOne(query, projection, cb);
+  }
 };
 
 LiveDbMongo.prototype.queryDoc = function(livedb, index, cName, docName, inputQuery, callback) {
@@ -366,8 +413,15 @@ LiveDbMongo.prototype.queryNeedsPollMode = function(index, query) {
 // Return error string on error. Query should already be normalized with
 // normalizeQuery below.
 LiveDbMongo.prototype.checkQuery = function(query) {
-  if (!this.allowWhereQuery && query.$query.$where != null)
-    return "Illegal $where query";
+  if (!this.allowJSQueries) {
+    if (query.$query.$where != null)
+      return "$where queries disabled";
+    if (query.$mapReduce != null)
+      return "$mapReduce queries disabled";
+  }
+
+  if (!this.allowAggregateQueries && query.$aggregate)
+    return "$aggregate queries disabled";
 };
 
 function extractCursorMethods(query) {
