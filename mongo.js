@@ -1,4 +1,5 @@
-var mongoskin = require('mongoskin');
+var mongoClient = require('mongodb').MongoClient;
+var EventEmitter = new require('events').EventEmitter;
 var assert = require('assert');
 var async = require('async');
 var util = require('util');
@@ -25,31 +26,49 @@ var cursorOperators = {
 
 /* There are two ways to instantiate a livedb-mongo wrapper.
  *
- * 1. The simplest way is to just invoke the module and pass in your mongoskin
+ * 1. The simplest way is to just invoke the module and pass in your mongo DB
  * arguments as arguments to the module function. For example:
  *
- * var db = require('livedb-mongo')('localhost:27017/test?auto_reconnect', {safe:true});
+ * var livedbMongo = require('livedb-mongo')('localhost:27017/test?auto_reconnect', {safe:true});
  *
- * 2. If you already have a mongoskin instance that you want to use, you can
+ * 2. If you already have a mongo Db instance that you want to use, you can
  * just pass it into livedb-mongo:
  *
- * var skin = require('mongoskin')('localhost:27017/test?auto_reconnect', {safe:true});
- * var db = require('livedb-mongo')(skin);
- */
-exports = module.exports = function(mongo, options) {
-  if (util.isArray(mongo) || typeof mongo !== 'object') {
-    mongo = mongoskin.db.apply(mongoskin.db, arguments);
-  }
-  return new LiveDbMongo(mongo, options);
-};
+ * var mongoClient = require('mongodb').MongoClient;
+ * var mongoUrl = 'localhost:27017/test?auto_reconnect';
+ * mongoClient.connect(mongoUrl, {safe:true}, function(err, db){
+ *   var livedbMongo = require('livedb-mongo')(db);
+ * });
+*/
 
-// Deprecated. Don't use directly.
-exports.LiveDbMongo = LiveDbMongo;
+module.exports = LiveDbMongo;
 
-// mongo is a mongoskin client. Create with:
-// mongo.db('localhost:27017/tx?auto_reconnect', safe:true)
 function LiveDbMongo(mongo, options) {
-  this.mongo = mongo;
+
+  // use without new
+  if (!(this instanceof LiveDbMongo)){
+    var obj = Object.create(LiveDbMongo.prototype);
+    obj.constructor.apply(obj, arguments);
+    return obj;
+  }
+
+  var self = this;
+
+  self.emitter = new EventEmitter;
+
+  if (util.isArray(mongo) || typeof mongo !== 'object') {
+
+    // mongonative >= 2.0 allow to get db only inside callback
+    mongoClient.connect(mongo, options, function(err, db){
+      assert.equal(null, err);
+      self.mongo = db;
+      self.emitter.emit('connect', db);
+    });
+
+  } else {
+    this.mongo = mongo;
+  }
+
   this.closed = false;
 
   if (!options) options = {};
@@ -75,12 +94,25 @@ function LiveDbMongo(mongo, options) {
   // Aggregate queries are less dangerous, but you can use them to access any
   // data in the mongo database.
   this.allowAggregateQueries = options.allowAllQueries || options.allowAggregateQueries;
-}
+};
+
+LiveDbMongo.prototype.getDb = function(cb){
+  if (this.mongo) return cb(this.mongo);
+
+  this.emitter.on('connect', cb);
+};
 
 LiveDbMongo.prototype.close = function(callback) {
+  var self = this;
+
   if (this.closed) return callback('db already closed');
-  this.mongo.close(callback);
-  this.closed = true;
+
+  this.getDb(function(mongo){
+    mongo.close(callback);
+
+    self.closed = true;
+  });
+
 };
 
 function isValidCName(cName) {
@@ -96,8 +128,10 @@ LiveDbMongo.prototype._check = function(cName) {
 
 LiveDbMongo.prototype.getSnapshot = function(cName, docName, callback) {
   var err; if (err = this._check(cName)) return callback(err);
-  this.mongo.collection(cName).findOne({_id: docName}, function(err, doc) {
-    callback(err, castToSnapshot(doc));
+  this.getDb(function(mongo) {
+    mongo.collection(cName).findOne({_id: docName}, function (err, doc) {
+      callback(err, castToSnapshot(doc));
+    });
   });
 };
 
@@ -109,15 +143,18 @@ LiveDbMongo.prototype.getSnapshotProjected = function(cName, docName, fields, ca
   // promoted all fields in mongo). This will only work properly for json documents - which happen
   // to be the only types that we really want projections for.
   var projection = projectionFromFields(fields);
-  this.mongo.collection(cName).findOne({_id: docName}, projection, function(err, doc) {
-    callback(err, castToSnapshot(doc));
+  this.getDb(function(mongo) {
+    mongo.collection(cName).findOne({_id: docName}, projection, function (err, doc) {
+      callback(err, castToSnapshot(doc));
+    });
   });
 };
 
 LiveDbMongo.prototype.bulkGetSnapshot = function(requests, callback) {
+  var self = this;
+
   if (this.closed) return callback('db already closed');
 
-  var mongo = this.mongo;
   var results = {};
 
   var getSnapshots = function(cName, callback) {
@@ -126,14 +163,16 @@ LiveDbMongo.prototype.bulkGetSnapshot = function(requests, callback) {
     var cResult = results[cName] = {};
 
     var docNames = requests[cName];
-    mongo.collection(cName).find({_id:{$in:docNames}}).toArray(function(err, data) {
-      if (err) return callback(err);
-      data = data && data.map(castToSnapshot);
+    self.getDb(function(mongo) {
+      mongo.collection(cName).find({_id: {$in: docNames}}).toArray(function (err, data) {
+        if (err) return callback(err);
+        data = data && data.map(castToSnapshot);
 
-      for (var i = 0; i < data.length; i++) {
-        cResult[data[i].docName] = data[i];
-      }
-      callback();
+        for (var i = 0; i < data.length; i++) {
+          cResult[data[i].docName] = data[i];
+        }
+        callback();
+      });
     });
   };
 
@@ -145,7 +184,9 @@ LiveDbMongo.prototype.bulkGetSnapshot = function(requests, callback) {
 LiveDbMongo.prototype.writeSnapshot = function(cName, docName, data, callback) {
   var err; if (err = this._check(cName)) return callback(err);
   var doc = castToDoc(docName, data);
-  this.mongo.collection(cName).update({_id: docName}, doc, {upsert: true}, callback);
+  this.getDb(function(mongo) {
+    mongo.collection(cName).update({_id: docName}, doc, {upsert: true}, callback);
+  });
 };
 
 
@@ -158,7 +199,7 @@ LiveDbMongo.prototype.getOplogCollectionName = function(cName) {
 };
 
 // Get and return the op collection from mongo, ensuring it has the op index.
-LiveDbMongo.prototype._opCollection = function(cName) {
+LiveDbMongo.prototype._opCollection = function(mongo, cName) {
   var collection = this.mongo.collection(this.getOplogCollectionName(cName));
 
   if (!this.opIndexes[cName]) {
@@ -182,40 +223,52 @@ LiveDbMongo.prototype.writeOp = function(cName, docName, opData, callback) {
   data._id = docName + ' v' + opData.v,
   data.name = docName;
 
-  this._opCollection(cName).save(data, callback);
+  this.getDb(function(mongo) {
+    self._opCollection(mongo, cName).save(data, callback);
+  });
 };
 
 LiveDbMongo.prototype.getVersion = function(cName, docName, callback) {
   var err; if (err = this._check(cName)) return callback(err);
 
   var self = this;
-  this._opCollection(cName).findOne({name:docName}, {sort:{v:-1}}, function(err, data) {
-    if (err) return callback(err);
+  this.getDb(function(mongo) {
+    self._opCollection(mongo, cName).findOne({name: docName}, {sort: {v: -1}}, function (err, data) {
+      if (err) return callback(err);
 
-    if (data == null) {
-      self.mongo.collection(cName).findOne({_id: docName}, {_v:1}, function(err, doc) {
-        if (err) return callback(err);
-        callback(null, doc ? doc._v : 0);
-      });
-    } else {
-      callback(err, data.v + 1);
-    }
+      if (data == null) {
+        mongo.collection(cName).findOne({_id: docName}, {_v: 1}, function (err, doc) {
+          if (err) return callback(err);
+          callback(null, doc ? doc._v : 0);
+        });
+      } else {
+        callback(err, data.v + 1);
+      }
+    });
   });
 };
 
 LiveDbMongo.prototype.getOps = function(cName, docName, start, end, callback) {
+  var self = this;
+
   var err; if (err = this._check(cName)) return callback(err);
 
   var query = end == null ? {$gte:start} : {$gte:start, $lt:end};
-  this._opCollection(cName).find({name:docName, v:query}, {sort:{v:1}}).toArray(function(err, data) {
-    if (err) return callback(err);
 
-    for (var i = 0; i < data.length; i++) {
-      // Strip out _id in the results
-      delete data[i]._id;
-      delete data[i].name;
-    }
-    callback(null, data);
+  this.getDb(function(mongo) {
+    self._opCollection(mongo, cName).find({
+      name: docName,
+      v: query
+    }, {sort: {v: 1}}).toArray(function (err, data) {
+      if (err) return callback(err);
+
+      for (var i = 0; i < data.length; i++) {
+        // Strip out _id in the results
+        delete data[i]._id;
+        delete data[i].name;
+      }
+      callback(null, data);
+    });
   });
 
 };
@@ -294,6 +347,8 @@ LiveDbMongo.prototype.query = function(livedb, cName, inputQuery, opts, callback
 };
 
 LiveDbMongo.prototype.queryProjected = function(livedb, cName, fields, inputQuery, opts, callback) {
+  var self = this;
+
   var err; if (err = this._check(cName)) return callback(err);
 
   // To support livedb <=0.2.8
@@ -308,7 +363,7 @@ LiveDbMongo.prototype.queryProjected = function(livedb, cName, fields, inputQuer
 
   // Use this.mongoPoll if its a polling query.
   if (opts.mode === 'poll' && this.mongoPoll) {
-    var self = this;
+
     // This timeout is a dodgy hack to work around race conditions replicating the
     // data out to the polling target replica.
     setTimeout(function() {
@@ -316,7 +371,9 @@ LiveDbMongo.prototype.queryProjected = function(livedb, cName, fields, inputQuer
       self._query(self.mongoPoll, cName, query, fields, callback);
     }, 300);
   } else {
-    this._query(this.mongo, cName, query, fields, callback);
+    this.getDb(function(mongo) {
+      self._query(mongo, cName, query, fields, callback);
+    });
   }
 };
 
@@ -349,7 +406,9 @@ LiveDbMongo.prototype.queryDocProjected = function(livedb, index, cName, docName
       self.mongoPoll.collection(cName).findOne(query, projection, cb);
     }, 300);
   } else {
-    this.mongo.collection(cName).findOne(query, projection, cb);
+    this.getDb(function(mongo) {
+      mongo.collection(cName).findOne(query, projection, cb);
+    });
   }
 };
 
