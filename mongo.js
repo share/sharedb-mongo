@@ -99,7 +99,7 @@ function LiveDbMongo(mongo, options) {
 LiveDbMongo.prototype.getDb = function(cb){
   if (this.mongo) return cb(this.mongo);
 
-  this.emitter.on('connect', cb);
+  this.emitter.once('connect', cb);
 };
 
 LiveDbMongo.prototype.close = function(callback) {
