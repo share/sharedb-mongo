@@ -1,16 +1,17 @@
 # Mocha test using livedb's snapshot tests
-mongoskin = require 'mongoskin'
+mongoClient = require('mongodb').MongoClient
 liveDbMongo = require './mongo'
 assert = require 'assert'
 
 # Clear mongo
 clear = (callback) ->
-  mongo = mongoskin.db 'mongodb://localhost:27017/test?auto_reconnect', safe:true
-  mongo.dropCollection 'testcollection', ->
-    mongo.dropCollection 'testcollection_ops', ->
-      mongo.close()
+  mongoClient.connect 'mongodb://localhost:27017/test?auto_reconnect', safe:true, (err, mongo)->
 
-      callback()
+    mongo.dropCollection 'testcollection', ->
+      mongo.dropCollection 'testcollection_ops', ->
+        mongo.close()
+
+        callback()
 
 create = (callback) ->
   clear ->
@@ -21,8 +22,9 @@ describe 'mongo', ->
 
   describe 'raw', ->
     beforeEach (done) ->
-      @mongo = mongoskin.db 'mongodb://localhost:27017/test?auto_reconnect', safe:true
-      create (@db) => done()
+      mongoClient.connect 'mongodb://localhost:27017/test?auto_reconnect', safe:true, (err, db)=>
+        @mongo = db
+        create (@db) => done()
 
     afterEach ->
       @mongo.close()

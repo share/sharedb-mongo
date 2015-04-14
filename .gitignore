@@ -4,3 +4,4 @@
 *.rdb
 node_modules/
 scratch/
+.idea/
