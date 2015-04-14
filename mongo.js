@@ -17,6 +17,7 @@ var metaOperators = {
 , $snapshot: true
 , $count: true
 , $aggregate: true
+, $projection: true
 };
 
 var cursorOperators = {
@@ -319,7 +320,13 @@ LiveDbMongo.prototype._query = function(mongo, cName, query, fields, callback) {
     var cursorMethods = extractCursorMethods(query);
 
     // Weirdly, if the requested projection is empty, we send everything.
-    var projection = fields ? projectionFromFields(fields) : {};
+    var projection = {};
+    if (fields) {
+      projection = projectionFromFields(fields);
+    } else if (query.$projection) {
+      projection = projectionFromFields(query.$projection);
+      delete query.$projection;
+    }
 
     mongo.collection(cName).find(query, projection, function(err, cursor) {
       if (err) return callback(err);
