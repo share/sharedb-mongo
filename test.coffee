@@ -5,29 +5,26 @@ assert = require 'assert'
 
 # Clear mongo
 clear = (callback) ->
-  mongoClient.connect 'mongodb://localhost:27017/test?auto_reconnect', safe:true, (err, mongo)->
-
+  mongoClient.connect 'mongodb://localhost:27017/test', (err, mongo) ->
     mongo.dropCollection 'testcollection', ->
       mongo.dropCollection 'testcollection_ops', ->
-        mongo.close()
-
-        callback()
+        mongo.close callback
 
 create = (callback) ->
   clear ->
-    callback liveDbMongo 'mongodb://localhost:27017/test?auto_reconnect', safe: false
+    callback liveDbMongo 'mongodb://localhost:27017/test'
 
 describe 'mongo', ->
   afterEach clear
 
   describe 'raw', ->
     beforeEach (done) ->
-      mongoClient.connect 'mongodb://localhost:27017/test?auto_reconnect', safe:true, (err, db)=>
+      mongoClient.connect 'mongodb://localhost:27017/test', (err, db) =>
         @mongo = db
         create (@db) => done()
 
-    afterEach ->
-      @mongo.close()
+    afterEach (done) ->
+      @mongo.close done
 
     it 'adds an index for ops', (done) -> create (db) =>
       db.writeOp 'testcollection', 'foo', {v:0, create:{type:'json0'}}, (err) =>
