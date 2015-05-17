@@ -1,43 +1,43 @@
 # livedb-mongo
 
-MongoDB database adapter for [livedb](https://github.com/share/livedb). This driver can be used both as a snapshot
-store and oplog.
+MongoDB database adapter for [livedb](https://github.com/share/livedb). This
+driver can be used both as a snapshot store and oplog.
 
-Snapshots are stored where you'd expect (the named collection with
-\_id=docName). Operations are stored in `COLLECTION_ops`. If you have a
-users collection, the operations are stored in `users_ops`. If you have a
-document called `fred`, operations will be stored in documents called `fred
-v0`, `fred v1`, `fred v2` and so on.
+Snapshots are stored where you'd expect (the named collection with _id=docName).
+Operations are stored in `COLLECTION_ops`. If you have a users collection,
+the operations are stored in `users_ops`. If you have a document called `fred`,
+operations will be stored in documents called `fred v0`, `fred v1`, `fred v2`,
+and so on.
 
 JSON document snapshots in livedb-mongo are unwrapped so you can use mongo
 queries directly against JSON documents. (They just have some extra fields in
-    the form of `_v` and `_type`). You should always use livedb to edit
-documents - don't just edit them directly in mongo. You'll get weird behaviour
-if you do.
+the form of `_v` and `_type`). You should always use livedb to edit documents--
+don't just edit them directly in mongo. You'll get weird behaviour if you do.
 
 ## Usage
 
-LiveDB-mongo wraps native [mongodb](https://github.com/mongodb/node-mongodb-native). It
-passes all the arguments straight to mongodb's mongoClient's connect-function. `npm install
+LiveDB-mongo wraps native
+[mongodb](https://github.com/mongodb/node-mongodb-native). It passes all the
+arguments straight to mongodb's mongoClient's connect-function. `npm install
 livedb-mongo` then create your database wrapper using the same arguments you
 would pass to mongodb driver:
 
 ```javascript
 var livedbmongo = require('livedb-mongo');
-var mongo = livedbmongo('localhost:27017/test?auto_reconnect', {safe:true});
+var mongo = livedbmongo('localhost:27017/test');
 
 var livedb = require('livedb').client(mongo); // Or whatever. See livedb's docs.
 ```
 
-If you prefer, you can instead create a mongodb instance yourself and pass it to livedb-mongo:
+If you prefer, you can instead create a mongodb instance yourself and pass it
+to livedb-mongo:
 
 ```javascript
 
 var mongoClient = require('mongodb').MongoClient;
-var mongoUrl = 'localhost:27017/test?auto_reconnect';
 var livedbmongo = require('livedb-mongo');
 
-mongoClient.connect(mongoUrl, {safe:true}, function(err, db){
+mongoClient.connect('localhost:27017/test', function(err, db){
   var mongo = require('livedb-mongo')(db);
   var livedb = require('livedb').client(mongo); // Or whatever. See livedb's docs.
 });

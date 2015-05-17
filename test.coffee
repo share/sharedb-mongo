@@ -1,6 +1,6 @@
 # Mocha test using livedb's snapshot tests
 mongodb = require 'mongodb'
-LiveDbMongo = require './mongo'
+LiveDbMongo = require './index'
 assert = require 'assert'
 
 # Clear mongo
