@@ -1,31 +1,30 @@
 # Mocha test using livedb's snapshot tests
-mongoskin = require 'mongoskin'
+mongoClient = require('mongodb').MongoClient
 liveDbMongo = require './mongo'
 assert = require 'assert'
 
 # Clear mongo
 clear = (callback) ->
-  mongo = mongoskin.db 'mongodb://localhost:27017/test?auto_reconnect', safe:true
-  mongo.dropCollection 'testcollection', ->
-    mongo.dropCollection 'testcollection_ops', ->
-      mongo.close()
-
-      callback()
+  mongoClient.connect 'mongodb://localhost:27017/test', (err, mongo) ->
+    mongo.dropCollection 'testcollection', ->
+      mongo.dropCollection 'testcollection_ops', ->
+        mongo.close callback
 
 create = (callback) ->
   clear ->
-    callback liveDbMongo 'mongodb://localhost:27017/test?auto_reconnect', safe: false
+    callback liveDbMongo 'mongodb://localhost:27017/test'
 
 describe 'mongo', ->
   afterEach clear
 
   describe 'raw', ->
     beforeEach (done) ->
-      @mongo = mongoskin.db 'mongodb://localhost:27017/test?auto_reconnect', safe:true
-      create (@db) => done()
+      mongoClient.connect 'mongodb://localhost:27017/test', (err, db) =>
+        @mongo = db
+        create (@db) => done()
 
-    afterEach ->
-      @mongo.close()
+    afterEach (done) ->
+      @mongo.close done
 
     it 'adds an index for ops', (done) -> create (db) =>
       db.writeOp 'testcollection', 'foo', {v:0, create:{type:'json0'}}, (err) =>

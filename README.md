@@ -17,10 +17,10 @@ if you do.
 
 ## Usage
 
-LiveDB-mongo wraps [mongoskin](https://github.com/kissjs/node-mongoskin). It
-passes all the arguments straight to mongoskin's constructor. `npm install
+LiveDB-mongo wraps native [mongodb](https://github.com/mongodb/node-mongodb-native). It
+passes all the arguments straight to mongodb's mongoClient's connect-function. `npm install
 livedb-mongo` then create your database wrapper using the same arguments you
-would pass to mongoskin:
+would pass to mongodb driver:
 
 ```javascript
 var livedbmongo = require('livedb-mongo');
@@ -29,19 +29,23 @@ var mongo = livedbmongo('localhost:27017/test?auto_reconnect', {safe:true});
 var livedb = require('livedb').client(mongo); // Or whatever. See livedb's docs.
 ```
 
-If you prefer, you can instead create a mongoskin instance yourself and pass it to livedb-mongo:
+If you prefer, you can instead create a mongodb instance yourself and pass it to livedb-mongo:
 
 ```javascript
-var mongoskin = require('mongoskin');
-var skin = mongoskin('localhost:27017/test?auto_reconnect', {safe:true});
 
+var mongoClient = require('mongodb').MongoClient;
+var mongoUrl = 'localhost:27017/test?auto_reconnect';
 var livedbmongo = require('livedb-mongo');
-var mongo = livedbmongo(skin);
+
+mongoClient.connect(mongoUrl, {safe:true}, function(err, db){
+  var mongo = require('livedb-mongo')(db);
+  var livedb = require('livedb').client(mongo); // Or whatever. See livedb's docs.
+});
+
 ```
 
-
 ## MIT License
-Copyright (c) 2013 by Joseph Gentle and Nate Smith
+Copyright (c) 2015 by Joseph Gentle and Nate Smith
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
