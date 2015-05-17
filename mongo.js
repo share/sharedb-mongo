@@ -1,8 +1,5 @@
-var mongoClient = require('mongodb').MongoClient;
-var EventEmitter = new require('events').EventEmitter;
-var assert = require('assert');
+var mongodb = require('mongodb');
 var async = require('async');
-var util = require('util');
 
 var metaOperators = {
   $comment: true
@@ -26,17 +23,16 @@ var cursorOperators = {
 
 /* There are two ways to instantiate a livedb-mongo wrapper.
  *
- * 1. The simplest way is to just invoke the module and pass in your mongo DB
+ * 1. The simplest way is to invoke the module and pass in your mongo DB
  * arguments as arguments to the module function. For example:
  *
- * var livedbMongo = require('livedb-mongo')('localhost:27017/test?auto_reconnect', {safe:true});
+ * var livedbMongo = require('livedb-mongo')('localhost:27017/test');
  *
- * 2. If you already have a mongo Db instance that you want to use, you can
- * just pass it into livedb-mongo:
+ * 2. If you already have a mongo Db instance that you want to use, you
+ * alternatively can pass it into livedb-mongo:
  *
- * var mongoClient = require('mongodb').MongoClient;
- * var mongoUrl = 'localhost:27017/test?auto_reconnect';
- * mongoClient.connect(mongoUrl, {safe:true}, function(err, db){
+ * var mongodb = require('mongodb');
+ * mongodb.connect('localhost:27017/test', function(err, db){
  *   var livedbMongo = require('livedb-mongo')(db);
  * });
 */
@@ -44,7 +40,6 @@ var cursorOperators = {
 module.exports = LiveDbMongo;
 
 function LiveDbMongo(mongo, options) {
-
   // use without new
   if (!(this instanceof LiveDbMongo)){
     var obj = Object.create(LiveDbMongo.prototype);
@@ -52,38 +47,26 @@ function LiveDbMongo(mongo, options) {
     return obj;
   }
 
-  var self = this;
-
-  self.emitter = new EventEmitter;
-
-  if (util.isArray(mongo) || typeof mongo !== 'object') {
-
-    // mongonative >= 2.0 allow to get db only inside callback
-    mongoClient.connect(mongo, options, function(err, db){
-      assert.equal(null, err);
-      self.mongo = db;
-      self.emitter.emit('connect', db);
-    });
-
-  } else {
-    this.mongo = mongo;
-  }
-
-  this.closed = false;
-
   if (!options) options = {};
 
-  this.mongoPoll = options.mongoPoll || null;
+  // pollDelay is a dodgy hack to work around race conditions replicating the
+  // data out to the polling target secondaries. If a separate db is specified
+  // for polling, it defaults to 300ms
+  this.pollDelay = (options.pollDelay != null) ? options.pollDelay :
+    (options.mongoPoll) ? 300 : 0;
+
+  // By default, we create indexes on any ops collection that is used
+  this.disableIndexCreation = options.disableIndexCreation;
 
   // The getVersion() and getOps() methods depend on a collectionname_ops
   // collection, and that collection should have an index on the operations
   // stored there. I could ask people to make these indexes themselves, but
   // even I forgot on some of my collections, so the mongo driver will just do
-  // it manually. This approach will leak memory relative to the number of
+  // it automatically. This approach will leak memory relative to the number of
   // collections you have, but if you've got thousands of mongo collections
   // you're probably doing something wrong.
 
-  // map from collection name -> true for op collections we've ensureIndex'ed
+  // Map from collection name -> true for op collections we've ensureIndex'ed
   this.opIndexes = {};
 
   // Allow $while and $mapReduce queries. These queries let you run arbitrary
@@ -94,103 +77,179 @@ function LiveDbMongo(mongo, options) {
   // Aggregate queries are less dangerous, but you can use them to access any
   // data in the mongo database.
   this.allowAggregateQueries = options.allowAllQueries || options.allowAggregateQueries;
+
+  // Track whether the close method has been called
+  this.closed = false;
+
+  if (typeof mongo === 'string') {
+    // We can only get the mongodb client instance in a callback, so
+    // buffer up any requests received in the meantime
+    this.mongo = null;
+    this.mongoPoll = null;
+    this.pendingConnect = [];
+    this._connect(mongo, options);
+  } else {
+    this.mongo = mongo;
+    this.mongoPoll = options.mongoPoll;
+    this.pendingConnect = null;
+  }
 };
 
-LiveDbMongo.prototype.getDb = function(cb){
-  if (this.mongo) return cb(this.mongo);
+LiveDbMongo.prototype.implementsProjection = true;
 
-  this.emitter.once('connect', cb);
+LiveDbMongo.prototype.getCollection = function(cName, callback) {
+  // Check the collection name
+  var err = this.validateCollectionName(cName);
+  if (err) return callback(err);
+  // Gotcha: calls back sync if connected or async if not
+  this.getDbs(function(err, mongo) {
+    if (err) return callback(err);
+    var collection = mongo.collection(cName);
+    return callback(null, collection);
+  });
+};
+
+LiveDbMongo.prototype._getCollectionPoll = function(cName, callback) {
+  // Check the collection name
+  var err = this.validateCollectionName(cName);
+  if (err) return callback(err);
+  // Gotcha: calls back sync if connected or async if not
+  this.getDbs(function(err, mongo, mongoPoll) {
+    if (err) return callback(err);
+    var collection = (mongoPoll || mongo).collection(cName);
+    return callback(null, collection);
+  });
+};
+
+LiveDbMongo.prototype.getCollectionPoll = function(cName, callback) {
+  if (this.pollDelay) {
+    var self = this;
+    setTimeout(function() {
+      self._getCollectionPoll(cName, callback);
+    }, this.pollDelay);
+    return;
+  }
+  this._getCollectionPoll(cName, callback);
+};
+
+LiveDbMongo.prototype.getDbs = function(callback) {
+  if (this.closed) return callback('db already closed');
+  // We consider ouself ready to reply if this.mongo is defined and don't check
+  // this.mongoPoll, since it is optional and is null by default. Thus, it's
+  // important that these two properties are only set together synchronously
+  if (this.mongo) return callback(null, this.mongo, this.mongoPoll);
+  this.pendingConnect.push(callback);
+};
+
+LiveDbMongo.prototype._flushPendingConnect = function() {
+  var pendingConnect = this.pendingConnect;
+  this.pendingConnect = null;
+  for (var i = 0; i < pendingConnect.length; i++) {
+    pendingConnect[i](null, this.mongo, this.mongoPoll);
+  }
+};
+
+LiveDbMongo.prototype._connect = function(mongo, options) {
+  var self = this;
+  // Create the mongo connection client connections if needed
+  if (options.mongoPoll) {
+    async.parallel({
+      mongo: function(parallelCb) {
+        mongodb.connect(mongo, options.mongoOptions, parallelCb);
+      },
+      mongoPoll: function(parallelCb) {
+        mongodb.connect(options.mongoPoll, options.mongoPollOptions, parallelCb);
+      }
+    }, function(err, results) {
+      // Just throw the error if we fail to connect, since we aren't
+      // implementing a way to retry
+      if (err) throw err;
+      self.mongo = results.mongo;
+      self.mongoPoll = results.mongoPoll;
+      self._flushPendingConnect();
+    });
+    return;
+  }
+  mongodb.connect(mongo, options, function(err, db) {
+    if (err) throw err;
+    self.mongo = db;
+    self._flushPendingConnect();
+  });
 };
 
 LiveDbMongo.prototype.close = function(callback) {
   var self = this;
-
-  if (this.closed) return callback('db already closed');
-
-  this.getDb(function(mongo){
-    mongo.close(callback);
-
+  this.getDbs(function(err, mongo, mongoPoll) {
+    if (err) return callback(err);
     self.closed = true;
+    var closeCb = (mongoPoll) ?
+      function(err) {
+        if (err) return callback(err);
+        mongoPoll.close(callback);
+      } :
+      callback;
+    mongo.close(closeCb);
   });
-
 };
 
-function isValidCName(cName) {
-  return !(/_ops$/.test(cName)) && cName !== 'system';
-}
-
-LiveDbMongo.prototype._check = function(cName) {
-  if (this.closed) return 'db already closed';
-  if (!isValidCName(cName)) return 'Invalid collection name';
-};
 
 // **** Snapshot methods
 
-LiveDbMongo.prototype.getSnapshot = function(cName, docName, callback) {
-  var err; if (err = this._check(cName)) return callback(err);
-  this.getDb(function(mongo) {
-    mongo.collection(cName).findOne({_id: docName}, function (err, doc) {
-      callback(err, castToSnapshot(doc));
-    });
-  });
-};
-
-// Variant on getSnapshot (above) which projects the returned document
-LiveDbMongo.prototype.getSnapshotProjected = function(cName, docName, fields, callback) {
-  var err; if (err = this._check(cName)) return callback(err);
-
+LiveDbMongo.prototype.getSnapshot = function(cName, docName, projection, callback) {
   // This code depends on the document being stored in the efficient way (which is to say, we've
   // promoted all fields in mongo). This will only work properly for json documents - which happen
   // to be the only types that we really want projections for.
-  var projection = projectionFromFields(fields);
-  this.getDb(function(mongo) {
-    mongo.collection(cName).findOne({_id: docName}, projection, function (err, doc) {
+  this.getCollection(cName, function(err, collection) {
+    if (err) return callback(err);
+    var query = {_id: docName};
+    var mongoProjection = getMongoProjection(projection);
+    collection.findOne(query, mongoProjection, function(err, doc) {
       callback(err, castToSnapshot(doc));
     });
   });
 };
 
-LiveDbMongo.prototype.bulkGetSnapshot = function(requests, callback) {
+LiveDbMongo.prototype.bulkGetSnapshot = function(requests, projections, callback) {
   var self = this;
-
-  if (this.closed) return callback('db already closed');
-
   var results = {};
 
-  var getSnapshots = function(cName, callback) {
-    if (!isValidCName(cName)) return 'Invalid collection name';
-
-    var cResult = results[cName] = {};
-
-    var docNames = requests[cName];
-    self.getDb(function(mongo) {
-      mongo.collection(cName).find({_id: {$in: docNames}}).toArray(function (err, data) {
-        if (err) return callback(err);
-        data = data && data.map(castToSnapshot);
-
-        for (var i = 0; i < data.length; i++) {
-          cResult[data[i].docName] = data[i];
+  function getSnapshots(cName, eachCb) {
+    self.getCollection(cName, function(err, collection) {
+      if (err) return eachCb(err);
+      var cResult = results[cName] = {};
+      var docNames = requests[cName];
+      var query = {_id: {$in: docNames}};
+      var mongoProjection = getMongoProjection(projections && projections[cName]);
+      collection.find(query, mongoProjection).toArray(function(err, docs) {
+        if (err) return eachCb(err);
+        for (var i = 0; i < docs.length; i++) {
+          var snapshot = castToSnapshot(docs[i]);
+          cResult[snapshot.docName] = snapshot;
         }
-        callback();
+        eachCb();
       });
     });
-  };
-
+  }
   async.each(Object.keys(requests), getSnapshots, function(err) {
-    callback(err, err ? null : results);
+    if (err) return callback(err);
+    callback(null, results);
   });
 };
 
 LiveDbMongo.prototype.writeSnapshot = function(cName, docName, data, callback) {
-  var err; if (err = this._check(cName)) return callback(err);
-  var doc = castToDoc(docName, data);
-  this.getDb(function(mongo) {
-    mongo.collection(cName).update({_id: docName}, doc, {upsert: true}, callback);
+  this.getCollection(cName, function(err, collection) {
+    if (err) return callback(err);
+    if (data == null) {
+      collection.remove({_id: docName}, callback);
+      return;
+    }
+    var doc = castToDoc(docName, data);
+    collection.update({_id: docName}, doc, {upsert: true}, callback);
   });
 };
 
 
-// ******* Oplog methods
+// **** Oplog methods
 
 // Overwrite me if you want to change this behaviour.
 LiveDbMongo.prototype.getOplogCollectionName = function(cName) {
@@ -198,235 +257,231 @@ LiveDbMongo.prototype.getOplogCollectionName = function(cName) {
   return cName + '_ops';
 };
 
-// Get and return the op collection from mongo, ensuring it has the op index.
-LiveDbMongo.prototype._opCollection = function(mongo, cName) {
-  var collection = this.mongo.collection(this.getOplogCollectionName(cName));
-
-  if (!this.opIndexes[cName]) {
-    collection.ensureIndex({name: 1, v: 1}, true, function(error, name) {
-      if (error) console.warn('Warning: Could not create index for op collection:', error.stack || error);
-    });
-
-    this.opIndexes[cName] = true;
+LiveDbMongo.prototype.validateCollectionName = function(cName) {
+  if (/_ops$/.test(cName) || cName === 'system') {
+    return 'Invalid collection name ' + cName;
   }
+};
 
-  return collection;
+// Get and return the op collection from mongo, ensuring it has the op index.
+LiveDbMongo.prototype.getOpCollection = function(cName, callback) {
+  var self = this;
+  this.getDbs(function(err, mongo) {
+    if (err) return callback(err);
+    var name = self.getOplogCollectionName(cName);
+    var collection = mongo.collection(name);
+    // Given the potential problems with creating indexes on the fly, it might
+    // be preferrable to disable automatic creation
+    if (self.disableIndexCreation) {
+      return callback(null, collection);
+    }
+    if (self.opIndexes[cName]) {
+      return callback(null, collection);
+    }
+    // Note: Creating indexes automatically like this is quite dangerous in
+    // production if we are starting with a lot of data and no indexes already.
+    // If indexes are created as the first ops are added to a collection this
+    // won't be a problem, but backup restores that don't restore indexes could
+    // lead to lockup of the database. Perhaps there should be a safety
+    // mechanism of some kind
+    collection.ensureIndex({name: 1, v: 1}, true, function(err) {
+      if (err) return callback(err);
+      self.opIndexes[cName] = true;
+      callback(null, collection);
+    });
+  });
 };
 
 LiveDbMongo.prototype.writeOp = function(cName, docName, opData, callback) {
-  assert(opData.v != null);
-
-  var err; if (err = this._check(cName)) return callback(err);
-  var self = this;
-
-  var data = shallowClone(opData);
-  data._id = docName + ' v' + opData.v,
-  data.name = docName;
-
-  this.getDb(function(mongo) {
-    self._opCollection(mongo, cName).save(data, callback);
+  if (typeof opData.v !== 'number') {
+    var err = 'Invalid op version ' + cName + ' ' + docName + ' ' + opData.v;
+    return callback(err);
+  }
+  this.getOpCollection(cName, function(err, opCollection) {
+    if (err) return callback(err);
+    var data = shallowClone(opData);
+    data._id = docName + ' v' + opData.v,
+    data.name = docName;
+    opCollection.save(data, callback);
   });
 };
 
 LiveDbMongo.prototype.getVersion = function(cName, docName, callback) {
-  var err; if (err = this._check(cName)) return callback(err);
-
   var self = this;
-  this.getDb(function(mongo) {
-    self._opCollection(mongo, cName).findOne({name: docName}, {sort: {v: -1}}, function (err, data) {
+  this.getOpCollection(cName, function(err, opCollection) {
+    if (err) return callback(err);
+    // Return the version from the latest op if there is one
+    var opQuery = {
+      $query: {name: docName},
+      $orderby: {v: -1}
+    };
+    var opProjection = {_id: 0, v: 1};
+    opCollection.findOne(opQuery, opProjection, function(err, op) {
       if (err) return callback(err);
-
-      if (data == null) {
-        mongo.collection(cName).findOne({_id: docName}, {_v: 1}, function (err, doc) {
+      if (op) {
+        callback(null, op.v + 1);
+        return;
+      }
+      // If we don't have ops, use the version from the doc snapshot, or
+      // default to 0 if there is no record of the doc
+      self.getCollection(cName, function(err, collection) {
+        if (err) return callback(err);
+        var docQuery = {_id: docName};
+        var docProjection = {_id: 0, _v: 1};
+        collection.findOne(docQuery, docProjection, function(err, doc) {
           if (err) return callback(err);
           callback(null, doc ? doc._v : 0);
         });
-      } else {
-        callback(err, data.v + 1);
-      }
+      });
     });
   });
 };
 
 LiveDbMongo.prototype.getOps = function(cName, docName, start, end, callback) {
-  var self = this;
-
-  var err; if (err = this._check(cName)) return callback(err);
-
-  var query = end == null ? {$gte:start} : {$gte:start, $lt:end};
-
-  this.getDb(function(mongo) {
-    self._opCollection(mongo, cName).find({
-      name: docName,
-      v: query
-    }, {sort: {v: 1}}).toArray(function (err, data) {
-      if (err) return callback(err);
-
-      for (var i = 0; i < data.length; i++) {
-        // Strip out _id in the results
-        delete data[i]._id;
-        delete data[i].name;
-      }
-      callback(null, data);
-    });
-  });
-
-};
-
-
-// ***** Query methods
-
-// Internal method to actually run the query.
-LiveDbMongo.prototype._query = function(mongo, cName, query, fields, callback) {
-  // For count queries, don't run the find() at all. We also ignore the projection, since its not
-  // relevant.
-  if (query.$count) {
-    delete query.$count;
-    mongo.collection(cName).count(query.$query || {}, function(err, count) {
-      if (err) return callback(err);
-      // This API is kind of awful. FIXME in livedb.
-      callback(err, {results:[], extra:count});
-    });
-
-  } else if (query.$distinct) {
-    delete query.$distinct;
-    mongo.collection(cName).distinct(query.$field, query.$query || {}, function(err, result) {
-      if (err) return callback(err);
-      callback(err, {results:[], extra:result});
-    });
-
-  } else if (query.$aggregate) {
-    mongo.collection(cName).aggregate(query.$aggregate, function(err, result) {
-      if (err) return callback(err);
-      callback(err, {results:[], extra:result});
-    });
-
-  } else if (query.$mapReduce) {
-    delete query.$mapReduce;
-
-    var opt = {
-      query: query.$query || {},
-      out: {inline: 1},
-      scope: query.$scope || {}
+  this.getOpCollection(cName, function(err, opCollection) {
+    if (err) return callback(err);
+    var query = {
+      $query: {
+        name: docName,
+        v: (end == null) ? {$gte: start} : {$gte: start, $lt: end}
+      },
+      $orderby: {v: 1}
     };
-
-    mongo.collection(cName).mapReduce(query.$map, query.$reduce, opt, function (err, mapReduce) {
-      if (err) return callback(err);
-      callback(err, {results: [], extra: mapReduce});
-    });
-
-  } else {
-    var cursorMethods = extractCursorMethods(query);
-
-    // Weirdly, if the requested projection is empty, we send everything.
-    var projection = fields ? projectionFromFields(fields) : {};
-
-    mongo.collection(cName).find(query, projection, function(err, cursor) {
-      if (err) return callback(err);
-
-      for (var i = 0; i < cursorMethods.length; i++) {
-        var item = cursorMethods[i];
-        var method = item[0];
-        var arg = item[1];
-        cursor[method](arg);
-      }
-
-      cursor.toArray(function(err, results) {
-        results = results && results.map(castToSnapshot);
-        callback(err, results);
-      });
-    });
-  }
-
+    // Exclude the `_id` & `name` fields, which are only for use internal to
+    // livedb-mongo. Also exclude the `m` field, which can be used to store
+    // metadata on ops for tracking purposes
+    var projection = {
+      _id: 0,
+      name: 0,
+      m: 0
+    };
+    opCollection.find(query, projection).toArray(callback);
+  });
 };
 
-LiveDbMongo.prototype.query = function(livedb, cName, inputQuery, opts, callback) {
-  // Regular queries are just a special case of queryProjected, but with fields=null (which livedb
-  // will never pass naturally).
-  this.queryProjected(livedb, cName, null, inputQuery, opts, callback);
-};
 
-LiveDbMongo.prototype.queryProjected = function(livedb, cName, fields, inputQuery, opts, callback) {
-  var self = this;
+// **** Query methods
 
-  var err; if (err = this._check(cName)) return callback(err);
-
-  // To support livedb <=0.2.8
-  if (typeof opts === 'function') {
-    callback = opts;
-    opts = {};
-  }
-
+LiveDbMongo.prototype._query = function(collection, inputQuery, mongoProjection, callback) {
   var query = normalizeQuery(inputQuery);
   var err = this.checkQuery(query);
   if (err) return callback(err);
 
-  // Use this.mongoPoll if its a polling query.
-  if (opts.mode === 'poll' && this.mongoPoll) {
-
-    // This timeout is a dodgy hack to work around race conditions replicating the
-    // data out to the polling target replica.
-    setTimeout(function() {
-      if (self.closed) return callback('db already closed');
-      self._query(self.mongoPoll, cName, query, fields, callback);
-    }, 300);
-  } else {
-    this.getDb(function(mongo) {
-      self._query(mongo, cName, query, fields, callback);
+  if (query.$count) {
+    collection.count(query.$query || {}, function(err, extra) {
+      if (err) return callback(err);
+      callback(null, [], extra);
     });
-  }
-};
-
-LiveDbMongo.prototype.queryDocProjected = function(livedb, index, cName, docName, fields, inputQuery, callback) {
-  var err;
-  if (err = this._check(cName)) return callback(err);
-  var query = normalizeQuery(inputQuery);
-  if (err = this.checkQuery(query)) return callback(err);
-
-  // Run the query against a particular mongo document by adding an _id filter
-  var queryId = query.$query._id;
-  if (queryId) {
-    delete query.$query._id;
-    query.$query.$and = [{_id: docName}, {_id: queryId}];
-  } else {
-    query.$query._id = docName;
+    return;
   }
 
-  var projection = fields ? projectionFromFields(fields) : {};
-
-  function cb(err, doc) {
-    callback(err, castToSnapshot(doc));
-  }
-
-  if (this.mongoPoll) {
-    var self = this;
-    // Blah vomit - same dodgy hack as in queryProjected above.
-    setTimeout(function() {
-      if (self.closed) return callback('db already closed');
-      self.mongoPoll.collection(cName).findOne(query, projection, cb);
-    }, 300);
-  } else {
-    this.getDb(function(mongo) {
-      mongo.collection(cName).findOne(query, projection, cb);
+  if (query.$distinct) {
+    collection.distinct(query.$field, query.$query || {}, function(err, extra) {
+      if (err) return callback(err);
+      callback(null, [], extra);
     });
+    return;
   }
+
+  if (query.$aggregate) {
+    collection.aggregate(query.$aggregate, function(err, extra) {
+      if (err) return callback(err);
+      callback(null, [], extra);
+    });
+    return;
+  }
+
+  if (query.$mapReduce) {
+    var mapReduceOptions = {
+      query: query.$query || {},
+      out: {inline: 1},
+      scope: query.$scope || {}
+    };
+    collection.mapReduce(query.$map, query.$reduce, mapReduceOptions, function(err, extra) {
+      if (err) return callback(err);
+      callback(null, [], extra);
+    });
+    return;
+  }
+
+  collection.find(query, mongoProjection, query.$findOptions).toArray(callback);
 };
 
-LiveDbMongo.prototype.queryDoc = function(livedb, index, cName, docName, inputQuery, callback) {
-  this.queryDocProjected(livedb, index, cName, docName, null, inputQuery, callback);
+LiveDbMongo.prototype.query = function(cName, inputQuery, projection, options, callback) {
+  var self = this;
+  this.getCollection(cName, function(err, collection) {
+    if (err) return callback(err);
+    var mongoProjection = getMongoProjection(projection);
+    self._query(collection, inputQuery, mongoProjection, function(err, results, extra) {
+      if (err) return callback(err);
+      callback(null, results.map(castToSnapshot), extra);
+    });
+  });
 };
 
-// Test whether an operation will make the document its applied to match the
-// specified query. This function doesn't really have enough information to know
-// in all cases, but if we can determine whether a query matches based on just
-// the operation, it saves doing extra DB calls.
-//
-// currentStatus is true or false depending on whether the query currently
-// matches. return true or false if it knows, or null if the function doesn't
-// have enough information to tell.
-LiveDbMongo.prototype.willOpMakeDocMatchQuery = function(currentStatus, query, op) {
-  return null;
+LiveDbMongo.prototype.queryPoll = function(cName, inputQuery, options, callback) {
+  var self = this;
+  this.getCollectionPoll(cName, function(err, collection) {
+    if (err) return callback(err);
+    var mongoProjection = {_id: 1};
+    self._query(collection, inputQuery, mongoProjection, function(err, results, extra) {
+      if (err) return callback(err);
+      var docNames = [];
+      for (var i = 0; i < results.length; i++) {
+        docNames.push(results[i]._id);
+      }
+      callback(null, docNames, extra);
+    });
+  });
 };
+
+LiveDbMongo.prototype.queryPollDoc = function(cName, docName, inputQuery, options, callback) {
+  var self = this;
+  this.getCollectionPoll(cName, function(err, collection) {
+    if (err) return callback(err);
+
+    var query = normalizeQuery(inputQuery);
+    var err = self.checkQuery(query);
+    if (err) return callback(err);
+
+    // Run the query against a particular mongo document by adding an _id filter
+    var queryId = query.$query._id;
+    if (queryId && typeof queryId === 'object') {
+      // Check if the query contains the id directly in the common pattern of
+      // a query for a specific list of ids, such as {_id: {$in: [1, 2, 3]}}
+      if (Array.isArray(queryId.$in) && Object.keys(queryId).length === 1) {
+        if (queryId.$in.indexOf(docName) === -1) {
+          // If the id isn't in the list of ids, then there is no way this
+          // can be a match
+          return callback();
+        } else {
+          // If the id is in the list, then it is equivalent to restrict to our
+          // particular id and override the current value
+          queryId.$query._id = docName;
+        }
+      } else {
+        delete query.$query._id;
+        query.$query.$and = (query.$query.$and) ?
+          query.$query.$and.concat({_id: docName}, {_id: queryId}) :
+          [{_id: docName}, {_id: queryId}];
+      }
+    } else if (queryId && queryId !== docName) {
+      // If queryId is a primative value such as a string or number and it
+      // isn't equal to the docName, then there is no way this can be a match
+      return callback();
+    } else {
+      // Restrict the query to this particular document
+      query.$query._id = docName;
+    }
+
+    collection.findOne(query, {_id: 1}, function(err, doc) {
+      callback(err, !!doc);
+    });
+  });
+};
+
+
+// **** Polling optimization
 
 // Does the query need to be rerun against the database with every edit?
 LiveDbMongo.prototype.queryNeedsPollMode = function(index, query) {
@@ -435,6 +490,53 @@ LiveDbMongo.prototype.queryNeedsPollMode = function(index, query) {
     query.hasOwnProperty('$skip') ||
     query.hasOwnProperty('$count');
 };
+
+// Tell livedb not to poll when it sees ops that can't change the query results
+// because they are on unrelated fields
+LiveDbMongo.prototype.queryShouldPoll = function(collection, docName, opData, index, query) {
+  // Livedb is in charge of doing the validation of ops, so at this point we
+  // should be able to assume that the op is structured validly
+  if (opData.create || opData.del) return true;
+  if (!opData.op) return false;
+  var fields = getFields(query);
+  return opContainsAnyField(opData.op, fields);
+};
+
+function getFields(query) {
+  var fields = {};
+  getInnerFields(query.$query, fields);
+  getInnerFields(query.$orderby, fields);
+  getInnerFields(query, fields);
+  return fields;
+}
+
+function getInnerFields(params, fields) {
+  if (!params) return;
+  for (var key in params) {
+    var value = params[key];
+    if (key === '$or' || key === '$and') {
+      for (var i = 0; i < value.length; i++) {
+        var item = value[i];
+        getInnerFields(item, fields);
+      }
+    } else if (key[0] !== '$') {
+      var property = key.split('.')[0];
+      fields[property] = true;
+    }
+  }
+}
+
+function opContainsAnyField(op, fields) {
+  for (var i = 0; i < op.length; i++) {
+    var component = op[i];
+    if (component.p.length === 0) {
+      return true;
+    } else if (fields[component.p[0]]) {
+      return true;
+    }
+  }
+  return false;
+}
 
 
 // Utility methods
@@ -453,17 +555,6 @@ LiveDbMongo.prototype.checkQuery = function(query) {
     return "$aggregate queries disabled";
 };
 
-function extractCursorMethods(query) {
-  var out = [];
-  for (var key in query) {
-    if (cursorOperators[key]) {
-      out.push([cursorOperators[key], query[key]]);
-      delete query[key];
-    }
-  }
-  return out;
-}
-
 function normalizeQuery(inputQuery) {
   // Box queries inside of a $query and clone so that we know where to look
   // for selctors and can modify them without affecting the original object
@@ -474,19 +565,16 @@ function normalizeQuery(inputQuery) {
   } else {
     query = {$query: {}};
     for (var key in inputQuery) {
-      if (metaOperators[key] || cursorOperators[key]) {
+      if (metaOperators[key]) {
         query[key] = inputQuery[key];
+      } else if (cursorOperators[key]) {
+        var findOptions = query.$findOptions || (query.$findOptions = {});
+        findOptions[cursorOperators[key]] = inputQuery[key];
       } else {
         query.$query[key] = inputQuery[key];
       }
     }
   }
-
-  // Deleted documents are kept around so that we can start their version from
-  // the last version if they get recreated. When they are deleted, their type
-  // is set to null, so don't return any documents with a null type.
-  if (!query.$query._type) query.$query._type = {$ne: null};
-
   return query;
 }
 
@@ -497,42 +585,34 @@ function castToDoc(docName, data) {
     !Array.isArray(data.data)
   ) ?
     shallowClone(data.data) :
-    {_data: (data.data === void 0) ? null : data.data};
-  doc._type = data.type || null;
+    {_data: (data.data === undefined) ? null : data.data};
+  doc._id = docName;
+  doc._type = data.type;
   doc._v = data.v;
   doc._m = data.m;
-  doc._id = docName;
   return doc;
 }
 
 function castToSnapshot(doc) {
   if (!doc) return;
-  var type = doc._type;
-  var v = doc._v;
   var docName = doc._id;
+  var type = doc._type;
   var data = doc._data;
-  var meta = doc._m;
-  if (data === void 0) {
-    doc = shallowClone(doc);
-    delete doc._type;
-    delete doc._v;
-    delete doc._id;
-    delete doc._m;
-    return {
-      data: doc
-    , type: type
-    , v: v
-    , docName: docName
-    , m: meta
-    };
+  var v = doc._v;
+  if (data === undefined) {
+    data = shallowClone(doc);
+    delete data._id;
+    delete data._type;
+    delete data._v;
+    return new MongoSnapshot(docName, type, data, v);
   }
-  return {
-    data: data
-  , type: type
-  , v: v
-  , docName: docName
-  , m: meta
-  };
+  return new MongoSnapshot(docName, type, data, v);
+}
+function MongoSnapshot(docName, type, data, v) {
+  this.docName = docName;
+  this.type = type;
+  this.data = data;
+  this.v = v;
 }
 
 function shallowClone(object) {
@@ -544,16 +624,16 @@ function shallowClone(object) {
 }
 
 // The fields property is already pretty perfect for mongo. This will only work for JSON documents.
-function projectionFromFields(fields) {
-  var projection = {};
-  for (var k in fields) {
-    projection[k] = 1;
+function getMongoProjection(projection) {
+  var fields = projection && projection.fields;
+  // When there is no projection specified, still exclude returning the metadata
+  // that is added to a doc for querying or auditing
+  if (!fields) return {_m: 0};
+  var out = {};
+  for (var key in fields) {
+    out[key] = 1;
   }
-  projection._v = 1;
-  projection._type = 1;
-  projection._m = 1;
-
-  return projection;
+  out._type = 1;
+  out._v = 1;
+  return out;
 }
-
-
