@@ -209,25 +209,33 @@ LiveDbMongo.prototype.getSnapshot = function(cName, docName, projection, callbac
   });
 };
 
+LiveDbMongo.prototype.getSnapshots = function(cName, docNames, projection, callback) {
+  this.getCollection(cName, function(err, collection) {
+    if (err) return callback(err);
+    var query = {_id: {$in: docNames}};
+    var mongoProjection = getMongoProjection(projection);
+    collection.find(query, mongoProjection).toArray(function(err, docs) {
+      if (err) return callback(err);
+      callback(err, docs.map(castToSnapshot));
+    });
+  });
+};
+
 LiveDbMongo.prototype.bulkGetSnapshot = function(requests, projections, callback) {
   var self = this;
   var results = {};
 
   function getSnapshots(cName, eachCb) {
-    self.getCollection(cName, function(err, collection) {
+    var cResult = results[cName] = {};
+    var docNames = requests[cName];
+    var projection = projections && projections[cName];
+    self.getSnapshots(cName, docNames, projection, function(err, snapshots) {
       if (err) return eachCb(err);
-      var cResult = results[cName] = {};
-      var docNames = requests[cName];
-      var query = {_id: {$in: docNames}};
-      var mongoProjection = getMongoProjection(projections && projections[cName]);
-      collection.find(query, mongoProjection).toArray(function(err, docs) {
-        if (err) return eachCb(err);
-        for (var i = 0; i < docs.length; i++) {
-          var snapshot = castToSnapshot(docs[i]);
-          cResult[snapshot.docName] = snapshot;
-        }
-        eachCb();
-      });
+      for (var i = 0; i < snapshots.length; i++) {
+        var snapshot = snapshots[i];
+        cResult[snapshot.docName] = snapshot;
+      }
+      eachCb();
     });
   }
   async.each(Object.keys(requests), getSnapshots, function(err) {
