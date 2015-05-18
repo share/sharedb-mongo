@@ -195,52 +195,26 @@ LiveDbMongo.prototype.close = function(callback) {
 
 // **** Snapshot methods
 
-LiveDbMongo.prototype.getSnapshot = function(cName, docName, projection, callback) {
-  // This code depends on the document being stored in the efficient way (which is to say, we've
-  // promoted all fields in mongo). This will only work properly for json documents - which happen
-  // to be the only types that we really want projections for.
+LiveDbMongo.prototype.getSnapshot = function(cName, docName, fields, callback) {
   this.getCollection(cName, function(err, collection) {
     if (err) return callback(err);
     var query = {_id: docName};
-    var mongoProjection = getMongoProjection(projection);
-    collection.findOne(query, mongoProjection, function(err, doc) {
+    var projection = getProjection(fields);
+    collection.findOne(query, projection, function(err, doc) {
       callback(err, castToSnapshot(doc));
     });
   });
 };
 
-LiveDbMongo.prototype.getSnapshots = function(cName, docNames, projection, callback) {
+LiveDbMongo.prototype.getSnapshots = function(cName, docNames, fields, callback) {
   this.getCollection(cName, function(err, collection) {
     if (err) return callback(err);
     var query = {_id: {$in: docNames}};
-    var mongoProjection = getMongoProjection(projection);
-    collection.find(query, mongoProjection).toArray(function(err, docs) {
+    var projection = getProjection(fields);
+    collection.find(query, projection).toArray(function(err, docs) {
       if (err) return callback(err);
       callback(err, docs.map(castToSnapshot));
     });
-  });
-};
-
-LiveDbMongo.prototype.bulkGetSnapshot = function(requests, projections, callback) {
-  var self = this;
-  var results = {};
-
-  function getSnapshots(cName, eachCb) {
-    var cResult = results[cName] = {};
-    var docNames = requests[cName];
-    var projection = projections && projections[cName];
-    self.getSnapshots(cName, docNames, projection, function(err, snapshots) {
-      if (err) return eachCb(err);
-      for (var i = 0; i < snapshots.length; i++) {
-        var snapshot = snapshots[i];
-        cResult[snapshot.docName] = snapshot;
-      }
-      eachCb();
-    });
-  }
-  async.each(Object.keys(requests), getSnapshots, function(err) {
-    if (err) return callback(err);
-    callback(null, results);
   });
 };
 
@@ -370,7 +344,7 @@ LiveDbMongo.prototype.getOps = function(cName, docName, start, end, callback) {
 
 // **** Query methods
 
-LiveDbMongo.prototype._query = function(collection, inputQuery, mongoProjection, callback) {
+LiveDbMongo.prototype._query = function(collection, inputQuery, projection, callback) {
   var query = normalizeQuery(inputQuery);
   var err = this.checkQuery(query);
   if (err) return callback(err);
@@ -412,15 +386,15 @@ LiveDbMongo.prototype._query = function(collection, inputQuery, mongoProjection,
     return;
   }
 
-  collection.find(query, mongoProjection, query.$findOptions).toArray(callback);
+  collection.find(query, projection, query.$findOptions).toArray(callback);
 };
 
-LiveDbMongo.prototype.query = function(cName, inputQuery, projection, options, callback) {
+LiveDbMongo.prototype.query = function(cName, inputQuery, fields, options, callback) {
   var self = this;
   this.getCollection(cName, function(err, collection) {
     if (err) return callback(err);
-    var mongoProjection = getMongoProjection(projection);
-    self._query(collection, inputQuery, mongoProjection, function(err, results, extra) {
+    var projection = getProjection(fields);
+    self._query(collection, inputQuery, projection, function(err, results, extra) {
       if (err) return callback(err);
       callback(null, results.map(castToSnapshot), extra);
     });
@@ -431,8 +405,8 @@ LiveDbMongo.prototype.queryPoll = function(cName, inputQuery, options, callback)
   var self = this;
   this.getCollectionPoll(cName, function(err, collection) {
     if (err) return callback(err);
-    var mongoProjection = {_id: 1};
-    self._query(collection, inputQuery, mongoProjection, function(err, results, extra) {
+    var projection = {_id: 1};
+    self._query(collection, inputQuery, projection, function(err, results, extra) {
       if (err) return callback(err);
       var docNames = [];
       for (var i = 0; i < results.length; i++) {
@@ -631,17 +605,19 @@ function shallowClone(object) {
   return out;
 }
 
-// The fields property is already pretty perfect for mongo. This will only work for JSON documents.
-function getMongoProjection(projection) {
-  var fields = projection && projection.fields;
+// Convert a simple map of fields that we want into a mongo projection. This
+// depends on the data being stored at the top level of the document. It will
+// only work properly for json documents--which are the only types for which
+// we really want projections.
+function getProjection(fields) {
   // When there is no projection specified, still exclude returning the metadata
   // that is added to a doc for querying or auditing
   if (!fields) return {_m: 0};
-  var out = {};
+  var projection = {};
   for (var key in fields) {
-    out[key] = 1;
+    projection[key] = 1;
   }
-  out._type = 1;
-  out._v = 1;
-  return out;
+  projection._type = 1;
+  projection._v = 1;
+  return projection;
 }

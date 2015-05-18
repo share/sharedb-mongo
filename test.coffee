@@ -169,7 +169,7 @@ describe 'mongo', ->
     describe 'query with projection', ->
       it 'returns only projected fields', (done) ->
         @db.writeSnapshot 'testcollection', 'test', {type:'json0', v:5, m:{}, data:{x:5, y:6}}, (err) =>
-          @db.query 'testcollection', {x:5}, {fields:{y:true}}, null, (err, results) ->
+          @db.query 'testcollection', {x:5}, {y:true}, null, (err, results) ->
             throw Error err if err
             assert.deepEqual results, [{type:'json0', v:5, data:{y:6}, docName:'test'}]
             done()
@@ -177,7 +177,7 @@ describe 'mongo', ->
       it 'returns no data for matching documents if fields is empty', (done) ->
         snapshot = {type:'json0', v:5, m:{}, data:{x:5, y:6}}
         @db.writeSnapshot 'testcollection', 'test', snapshot, (err) =>
-          @db.query 'testcollection', {x:5}, {fields: {}}, null, (err, results) ->
+          @db.query 'testcollection', {x:5}, {}, null, (err, results) ->
             throw Error err if err
             assert.deepEqual results, [{type:'json0', v:5, data:{}, docName:'test'}]
             done()
