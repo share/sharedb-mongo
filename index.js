@@ -466,7 +466,7 @@ LiveDbMongo.prototype.queryPollDoc = function(cName, docName, inputQuery, option
 // **** Polling optimization
 
 // Does the query need to be rerun against the database with every edit?
-LiveDbMongo.prototype.queryNeedsPollMode = function(index, query) {
+LiveDbMongo.prototype.queryNeedsPollMode = function(cName, index, query) {
   return query.hasOwnProperty('$orderby') ||
     query.hasOwnProperty('$limit') ||
     query.hasOwnProperty('$skip') ||
@@ -475,7 +475,7 @@ LiveDbMongo.prototype.queryNeedsPollMode = function(index, query) {
 
 // Tell livedb not to poll when it sees ops that can't change the query results
 // because they are on unrelated fields
-LiveDbMongo.prototype.queryShouldPoll = function(collection, docName, opData, index, query) {
+LiveDbMongo.prototype.queryShouldPoll = function(cName, docName, opData, index, query) {
   // Livedb is in charge of doing the validation of ops, so at this point we
   // should be able to assume that the op is structured validly
   if (opData.create || opData.del) return true;
