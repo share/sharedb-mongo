@@ -41,10 +41,8 @@ module.exports = LiveDbMongo;
 
 function LiveDbMongo(mongo, options) {
   // use without new
-  if (!(this instanceof LiveDbMongo)){
-    var obj = Object.create(LiveDbMongo.prototype);
-    obj.constructor.apply(obj, arguments);
-    return obj;
+  if (!(this instanceof LiveDbMongo)) {
+    return new LiveDbMongo(mongo, options);
   }
 
   if (!options) options = {};
@@ -221,7 +219,7 @@ LiveDbMongo.prototype.getSnapshots = function(cName, docNames, fields, callback)
 LiveDbMongo.prototype.writeSnapshot = function(cName, docName, data, callback) {
   this.getCollection(cName, function(err, collection) {
     if (err) return callback(err);
-    if (data == null) {
+    if (!data.type) {
       collection.remove({_id: docName}, callback);
       return;
     }
