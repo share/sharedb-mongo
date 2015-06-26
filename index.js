@@ -45,6 +45,10 @@ function LiveDbMongo(mongo, options) {
     return new LiveDbMongo(mongo, options);
   }
 
+  if (typeof mongo === 'object') {
+    options = mongo;
+    mongo = options.mongo;
+  }
   if (!options) options = {};
 
   // pollDelay is a dodgy hack to work around race conditions replicating the
