@@ -317,6 +317,29 @@ LiveDbMongo.prototype.getVersion = function(cName, docName, callback) {
   });
 };
 
+LiveDbMongo.prototype.getUncreatedVersion = function(cName, docName, callback) {
+  this.getOpCollection(cName, function(err, opCollection) {
+    if (err) return callback(err);
+    var opQuery = {
+      $query: {name: docName},
+      $orderby: {v: -1}
+    };
+    var opProjection = {_id: 0, v: 1, del: 1};
+    opCollection.findOne(opQuery, opProjection, function(err, op) {
+      if (err) return callback(err);
+      // In most cases, the doc will never have been created and we'll start
+      // from version 0
+      if (!op) return callback(null, 0);
+      // If the doc was last deleted, return the current version. This way,
+      // we'll create at the next version and avoid reusing a past version
+      if (op.del) return callback(null, op.v + 1);
+      // Otherwise, we think the doc is currently created. Return null to
+      // indicate that there should be a snapshot
+      callback(null, null);
+    });
+  });
+};
+
 LiveDbMongo.prototype.getOps = function(cName, docName, start, end, callback) {
   this.getOpCollection(cName, function(err, opCollection) {
     if (err) return callback(err);
