@@ -182,11 +182,11 @@ LiveDbMongo.prototype._connect = function(mongo, options) {
 LiveDbMongo.prototype.close = function(callback) {
   var self = this;
   this.getDbs(function(err, mongo, mongoPoll) {
-    if (err) return callback(err);
+    if (err) return callback && callback(err);
     self.closed = true;
     var closeCb = (mongoPoll) ?
       function(err) {
-        if (err) return callback(err);
+        if (err) return callback && callback(err);
         mongoPoll.close(callback);
       } :
       callback;
