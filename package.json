@@ -13,7 +13,7 @@
     "livedb": ">=0.3"
   },
   "scripts": {
-    "test": "mocha --compilers coffee:coffee-script/register --reporter spec --check-leaks test.coffee"
+    "test": "mocha --compilers coffee:coffee-script/register --reporter spec --check-leaks test.js"
   },
   "repository": "git://github.com/share/livedb-mongo.git",
   "author": "Joseph Gentle and Nate Smith",
