@@ -227,7 +227,7 @@ ShareDbMongo.prototype._writeSnapshot = function(collectionName, id, op, snapsho
   this.getCollection(collectionName, function(err, collection) {
     if (err) return callback(err);
     var doc = castToDoc(id, snapshot, op);
-    if (snapshot.v === 1) {
+    if (op.v === 0) {
       collection.insertOne(doc, function(err, result) {
         if (err) {
           // Return non-success instead of duplicate key error, since this is
