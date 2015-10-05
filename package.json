@@ -9,11 +9,11 @@
     "sharedb": "*"
   },
   "devDependencies": {
-    "mocha": "^2.3.3",
-    "expect.js": "^0.3.1"
+    "expect.js": "^0.3.1",
+    "mocha": "^2.3.3"
   },
   "scripts": {
-    "test": "mocha --reporter spec test.js"
+    "test": "node_modules/.bin/mocha --reporter spec test.js"
   },
   "repository": "git://github.com/share/sharedb-mongo.git",
   "author": "Joseph Gentle and Nate Smith",
