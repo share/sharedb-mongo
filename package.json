@@ -1,21 +1,21 @@
 {
-  "name": "livedb-mongo",
+  "name": "sharedb-mongo",
   "version": "0.4.1",
-  "description": "MongoDB database adapter for livedb",
+  "description": "MongoDB database adapter for ShareDB",
   "main": "index.js",
   "dependencies": {
-    "async": "^0.9.0",
-    "mongodb": "^2.0.31"
+    "async": "^1.4.2",
+    "mongodb": "^2.0.45",
+    "sharedb": "*"
   },
   "devDependencies": {
-    "mocha": "^1",
-    "coffee-script": "~1.7",
-    "livedb": ">=0.3"
+    "mocha": "^2.3.3",
+    "expect.js": "^0.3.1"
   },
   "scripts": {
-    "test": "mocha --compilers coffee:coffee-script/register --reporter spec --check-leaks test.js"
+    "test": "mocha --reporter spec test.js"
   },
-  "repository": "git://github.com/share/livedb-mongo.git",
+  "repository": "git://github.com/share/sharedb-mongo.git",
   "author": "Joseph Gentle and Nate Smith",
   "license": "MIT"
 }

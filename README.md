@@ -42,6 +42,23 @@ mongoClient.connect('localhost:27017/test', function(err, db){
   var livedb = require('livedb').client(mongo); // Or whatever. See livedb's docs.
 });
 
+## Error codes
+
+Mongo errors are passed back directly. Additional error codes:
+
+#### 4100 -- Bad request - DB
+
+* 4101 -- Invalid op version
+* 4102 -- Invalid collection name
+* 4103 -- $where queries disabled
+* 4104 -- $mapReduce queries disabled
+* 4105 -- $aggregate queries disabled
+
+#### 5100 -- Internal error - DB
+
+* 5101 -- Already closed
+* 5102 -- Snapshot missing last operation field
+
 ```
 
 ## MIT License

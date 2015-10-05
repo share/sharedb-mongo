@@ -1,7 +1,3 @@
 *.swp
-*.un~
-*.gz
-*.rdb
-node_modules/
-scratch/
-.idea/
+*.DS_Store
+node_modules
