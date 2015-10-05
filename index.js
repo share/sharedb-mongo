@@ -258,7 +258,7 @@ ShareDbMongo.prototype.getSnapshot = function(collectionName, id, fields, callba
     var projection = getProjection(fields);
     collection.findOne(query, projection, function(err, doc) {
       if (err) return callback(err);
-      var snapshot = (doc) ? castToSnapshot(doc) : new MongoSnapshot(id, 0);
+      var snapshot = (doc) ? castToSnapshot(doc) : new MongoSnapshot(id, 0, null, null);
       callback(null, snapshot);
     });
   });
@@ -281,7 +281,7 @@ ShareDbMongo.prototype.getSnapshotBulk = function(collectionName, ids, fields, c
       for (var i = 0; i < ids.length; i++) {
         var id = ids[i];
         if (snapshotMap[id]) continue;
-        snapshotMap[id] = new MongoSnapshot(id, 0);
+        snapshotMap[id] = new MongoSnapshot(id, 0, null, null);
       }
       callback(null, snapshotMap);
     });
