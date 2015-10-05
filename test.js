@@ -127,8 +127,9 @@ describe('mongo db', function() {
           if (err) throw err;
           mongo.collection('ops_testcollection').find({}).sort({v: -1}).toArray(function(err, opDocs) {
             if (err) throw err;
-            expect(snapshotDocs.length).equal(0);
+            expect(snapshotDocs.length).equal(1);
             expect(opDocs.length).equal(2);
+            expect(snapshotDocs[0]._o.equals(opDocs[0]._id)).ok();
             expect(opDocs[0].o.equals(opDocs[1]._id)).ok();
             done();
           });
@@ -140,9 +141,9 @@ describe('mongo db', function() {
       db.commit('testcollection', 'foo', op0, snapshot0, function(err) {
         if (err) throw err;
         var opA = {v: 1, del: true};
-        var snapshotA = {v: 2, type: null, _opLink: op0._id};
+        var snapshotA = {v: 2, _opLink: op0._id};
         var opB = {v: 1, del: true};
-        var snapshotB = {v: 2, type: null, _opLink: op0._id};
+        var snapshotB = {v: 2, _opLink: op0._id};
         db.commit('testcollection', 'foo', opA, snapshotA, commitCb);
         db.commit('testcollection', 'foo', opB, snapshotB, commitCb);
       });
@@ -150,7 +151,7 @@ describe('mongo db', function() {
   });
 
   describe('indexes', function() {
-    it('adds ops indexes', function(done) {
+    it('adds ops index', function(done) {
       var mongo = this.mongo;
       this.db.commit('testcollection', 'foo', {v: 0, create: {}}, {}, function(err) {
         if (err) throw err;
@@ -158,8 +159,6 @@ describe('mongo db', function() {
           if (err) throw err;
           // Index for getting document(s) ops
           expect(indexes['d_1_v_1']).ok();
-          // Index for getting latest document(s) delete op
-          expect(indexes['del_1_d_1_v_-1']).ok();
           done()
         });
       });

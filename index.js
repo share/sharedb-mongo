@@ -2,19 +2,19 @@ var mongodb = require('mongodb');
 var async = require('async');
 var DB = require('sharedb').DB;
 
-/* There are two ways to instantiate a livedb-mongo wrapper.
+/* There are two ways to instantiate a sharedb-mongo wrapper.
  *
  * 1. The simplest way is to invoke the module and pass in your mongo DB
  * arguments as arguments to the module function. For example:
  *
- * var ShareDbMongo = require('livedb-mongo')('localhost:27017/test');
+ * var db = require('sharedb-mongo')('localhost:27017/test');
  *
- * 2. If you already have a mongo Db instance that you want to use, you
- * alternatively can pass it into livedb-mongo:
+ * 2. If you already have a mongo connection that you want to use, you
+ * alternatively can pass it into sharedb-mongo:
  *
- * var mongodb = require('mongodb');
- * mongodb.connect('localhost:27017/test', function(err, db){
- *   var ShareDbMongo = require('livedb-mongo')(db);
+ * require('mongodb').connect('localhost:27017/test', function(err, mongo) {
+ *   if (err) throw err;
+ *   var db = require('sharedb-mongo')({mongo: mongo});
  * });
 */
 
@@ -226,30 +226,27 @@ ShareDbMongo.prototype._deleteOp = function(collectionName, opId, callback) {
 ShareDbMongo.prototype._writeSnapshot = function(collectionName, id, op, snapshot, callback) {
   this.getCollection(collectionName, function(err, collection) {
     if (err) return callback(err);
-    if (!snapshot.type) {
-      collection.deleteOne({_id: id, _v: op.v}, function(err, result) {
-        var succeeded = !!(result && result.deletedCount);
-        callback(err, succeeded);
-      });
-      return;
-    }
     var doc = castToDoc(id, snapshot, op);
-    if (op.create) {
+    if (snapshot.v === 1) {
       collection.insertOne(doc, function(err, result) {
-        // Allow duplicate key error, since this is intended to occur during
-        // two simultaneous creates on the same document
-        if (err && err.code === 11000) err = null;
-        var succeeded = !!(result && result.insertedCount);
-        callback(err, succeeded);
+        if (err) {
+          // Return non-success instead of duplicate key error, since this is
+          // expected to occur during simultaneous creates on the same id
+          if (err.code === 11000) return callback(null, false);
+          return callback(err);
+        }
+        callback(null, true);
       });
     } else {
       collection.replaceOne({_id: id, _v: op.v}, doc, function(err, result) {
-        var succeeded = !!(result && result.modifiedCount);
-        callback(err, succeeded);
+        if (err) return callback(err);
+        var succeeded = !!result.modifiedCount;
+        callback(null, succeeded);
       });
     }
   });
 };
+
 
 // **** Snapshot methods
 
@@ -261,11 +258,8 @@ ShareDbMongo.prototype.getSnapshot = function(collectionName, id, fields, callba
     var projection = getProjection(fields);
     collection.findOne(query, projection, function(err, doc) {
       if (err) return callback(err);
-      if (doc) {
-        var snapshot = castToSnapshot(doc);
-        return callback(null, snapshot);
-      }
-      self._getUncreated(collectionName, id, callback);
+      var snapshot = (doc) ? castToSnapshot(doc) : new MongoSnapshot(id, 0);
+      callback(null, snapshot);
     });
   });
 };
@@ -287,89 +281,13 @@ ShareDbMongo.prototype.getSnapshotBulk = function(collectionName, ids, fields, c
       for (var i = 0; i < ids.length; i++) {
         var id = ids[i];
         if (snapshotMap[id]) continue;
-        uncreated.push(id);
+        snapshotMap[id] = new MongoSnapshot(id, 0);
       }
-      if (!uncreated.length) {
-        return callback(null, snapshotMap);
-      }
-      self._getUncreatedBulk(collectionName, uncreated, snapshotMap, callback);
+      callback(null, snapshotMap);
     });
   });
 };
 
-// Figure out what version we should start with when fetching an uncreated
-// document. A document might be uncreated because it has never existed, in
-// which case its version is 0. Alternatively, the document might have been
-// created previously and then later deleted. In this case, we must never
-// repeat a version number.
-//
-// In general, this approach trades off more intuitive snapshot deletion for
-// extra complexity and a performance hit when fetching uncreated snapshots.
-// Most applications are probably not going to fetch a lot of deleted or not
-// yet created snapshots by their id, so this isn't expected to be much of an
-// issue in practice. In addition, it is imperative that at least the last
-// delete operation is maintained for a document that might ever be recreated.
-// Without this, versions would be repeated, and the document would likely
-// become corrupted.
-ShareDbMongo.prototype._getUncreated = function(collectionName, id, callback) {
-  this.getOpCollection(collectionName, function(err, opCollection) {
-    if (err) return callback(err);
-    var query = {
-      $query: {del: true, d: id},
-      $orderby: {v: -1}
-    };
-    var projection = {_id: 0, v: 1};
-    opCollection.findOne(query, projection, function(err, op) {
-      if (err) return callback(err);
-      var snapshot = (op) ?
-        // If the doc was ever deleted, return the version of the most recent
-        // delete. The doc may have already been recreated, making this an out
-        // of date version. It is up to callers of this function to deal with
-        // such a race condition correctly. The earlier snapshot fetch is
-        // considered the source of truth that this is an uncreated document.
-        new MongoSnapshot(id, op.v + 1, op._id) :
-        // When no delete op is found, assume the doc was never created and
-        // start from version 0
-        new MongoSnapshot(id, 0);
-      callback(null, snapshot);
-    });
-  });
-};
-
-ShareDbMongo.prototype._getUncreatedBulk = function(collectionName, ids, snapshotMap, callback) {
-  this.getOpCollection(collectionName, function(err, opCollection) {
-    if (err) return callback(err);
-    var query = {
-      $query: {del: true, d: {$in: ids}},
-      $orderby: {d: 1, v: -1}
-    };
-    var projection = {_id: 0, d: 1, v: 1};
-    opCollection.find(query, projection, function(err, cursor) {
-      if (err) return callback(err);
-      readUncreatedVersionBulk(collectionName, cursor, snapshotMap, null, function(err) {
-        if (err) return callback(err);
-        for (var i = 0; i < ids.length; i++) {
-          var id = ids[i];
-          if (snapshotMap[id]) continue;
-          snapshotMap[id] = new MongoSnapshot(id, 0);
-        }
-        callback(null, snapshotMap);
-      });
-    });
-  });
-};
-function readUncreatedVersionBulk(collectionName, cursor, snapshotMap, id, callback) {
-  cursor.nextObject(function(err, op) {
-    if (err) return callback(err);
-    if (op == null) return callback();
-    // Push a snapshot for the newest delete of each document
-    if (op.d !== id) {
-      id = op.d;
-      snapshotMap[id] = new MongoSnapshot(id, op.v + 1, op._id);
-    }
-    readUncreatedVersionBulk(collectionName, cursor, snapshotMap, id, callback);
-  });
-}
 
 // **** Oplog methods
 
@@ -416,11 +334,8 @@ ShareDbMongo.prototype.getOpCollection = function(collectionName, callback) {
     // when there is a lot of data in the collection.
     collection.createIndex({d: 1, v: 1}, {background: true}, function(err) {
       if (err) return callback(err);
-      collection.createIndex({del: 1, d: 1, v: -1}, {background: true}, function(err) {
-        if (err) return callback(err);
-        self.opIndexes[collectionName] = true;
-        callback(null, collection);
-      });
+      self.opIndexes[collectionName] = true;
+      callback(null, collection);
     });
   });
 };
@@ -885,6 +800,10 @@ function normalizeQuery(inputQuery) {
       }
     }
   }
+  // Deleted documents are kept around so that we can start their version from
+  // the last version if they get recreated. Lack of a type indicates that a
+  // snapshot is deleted, so don't return any documents with a null type
+  if (!query.$query._type) query.$query._type = {$ne: null};
   return query;
 }
 
@@ -895,7 +814,7 @@ function castToDoc(id, snapshot, op) {
     !Array.isArray(snapshot.data)
   ) ?
     shallowClone(snapshot.data) :
-    {_data: (snapshot.data === undefined) ? null : snapshot.data};
+    {_data: snapshot.data};
   doc._id = id;
   doc._type = snapshot.type;
   doc._v = snapshot.v;
@@ -905,31 +824,30 @@ function castToDoc(id, snapshot, op) {
 }
 
 function castToSnapshot(doc) {
-  if (!doc) return;
   var id = doc._id;
-  var type = doc._type;
   var version = doc._v;
+  var type = doc._type;
   var data = doc._data;
   var meta = doc._m;
   var opLink = doc._o;
-  if (data === undefined) {
-    data = shallowClone(doc);
-    delete data._id;
-    delete data._type;
-    delete data._v;
-    delete data._m;
-    delete data._o;
-    return new MongoSnapshot(id, version, opLink, type, data, meta);
+  if (doc.hasOwnProperty('_data')) {
+    return new MongoSnapshot(id, version, type, data, meta, opLink);
   }
-  return new MongoSnapshot(id, version, opLink, type, data, meta);
+  var data = shallowClone(doc);
+  delete data._id;
+  delete data._v;
+  delete data._type;
+  delete data._m;
+  delete data._o;
+  return new MongoSnapshot(id, version, type, data, meta, opLink);
 }
-function MongoSnapshot(id, version, opLink, type, data, meta) {
+function MongoSnapshot(id, version, type, data, meta, opLink) {
   this.id = id;
   this.v = version;
   this.type = type;
   this.data = data;
-  if (opLink) this._opLink = opLink;
   if (meta) this.m = meta;
+  if (opLink) this._opLink = opLink;
 }
 
 function shallowClone(object) {
