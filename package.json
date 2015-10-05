@@ -6,7 +6,7 @@
   "dependencies": {
     "async": "^1.4.2",
     "mongodb": "^2.0.45",
-    "sharedb": "*"
+    "sharedb": "^0.8.0"
   },
   "devDependencies": {
     "expect.js": "^0.3.1",
@@ -16,6 +16,6 @@
     "test": "node_modules/.bin/mocha --reporter spec test.js"
   },
   "repository": "git://github.com/share/sharedb-mongo.git",
-  "author": "Joseph Gentle and Nate Smith",
+  "author": "Nate Smith and Joseph Gentle",
   "license": "MIT"
 }
