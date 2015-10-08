@@ -1,5 +1,5 @@
-var mongodb = require('mongodb');
 var async = require('async');
+var mongodb = require('mongodb');
 var DB = require('sharedb').DB;
 
 module.exports = ShareDbMongo;
@@ -171,13 +171,14 @@ ShareDbMongo.prototype.close = function(callback) {
 
 ShareDbMongo.prototype.commit = function(collectionName, id, op, snapshot, callback) {
   var self = this;
-  this._writeOp(collectionName, id, op, snapshot, function(err) {
+  this._writeOp(collectionName, id, op, snapshot, function(err, result) {
     if (err) return callback(err);
-    self._writeSnapshot(collectionName, id, op, snapshot, function(err, succeeded) {
+    var opId = result.insertedId;
+    self._writeSnapshot(collectionName, id, snapshot, opId, function(err, succeeded) {
       if (succeeded) return callback(err, succeeded);
       // Cleanup unsuccessful op if snapshot write failed. This is not
       // neccessary for data correctness, but it gets rid of clutter
-      self._deleteOp(collectionName, op._id, function(removeErr) {
+      self._deleteOp(collectionName, opId, function(removeErr) {
         callback(err || removeErr, succeeded);
       });
     });
@@ -194,9 +195,10 @@ ShareDbMongo.prototype._writeOp = function(collectionName, id, op, snapshot, cal
   }
   this.getOpCollection(collectionName, function(err, opCollection) {
     if (err) return callback(err);
-    op.o = snapshot._opLink;
-    op.d = id;
-    opCollection.insertOne(op, callback);
+    var doc = shallowClone(op);
+    doc.d = id;
+    doc.o = snapshot._opLink;
+    opCollection.insertOne(doc, callback);
   });
 };
 
@@ -207,11 +209,11 @@ ShareDbMongo.prototype._deleteOp = function(collectionName, opId, callback) {
   });
 };
 
-ShareDbMongo.prototype._writeSnapshot = function(collectionName, id, op, snapshot, callback) {
+ShareDbMongo.prototype._writeSnapshot = function(collectionName, id, snapshot, opLink, callback) {
   this.getCollection(collectionName, function(err, collection) {
     if (err) return callback(err);
-    var doc = castToDoc(id, snapshot, op);
-    if (op.v === 0) {
+    var doc = castToDoc(id, snapshot, opLink);
+    if (doc._v === 1) {
       collection.insertOne(doc, function(err, result) {
         if (err) {
           // Return non-success instead of duplicate key error, since this is
@@ -222,7 +224,7 @@ ShareDbMongo.prototype._writeSnapshot = function(collectionName, id, op, snapsho
         callback(null, true);
       });
     } else {
-      collection.replaceOne({_id: id, _v: op.v}, doc, function(err, result) {
+      collection.replaceOne({_id: id, _v: doc._v - 1}, doc, function(err, result) {
         if (err) return callback(err);
         var succeeded = !!result.modifiedCount;
         callback(null, succeeded);
@@ -386,7 +388,7 @@ ShareDbMongo.prototype.getOpsBulk = function(collectionName, fromMap, toMap, cal
     // requested versions
     if (!conditions.length) return callback(null, opsMap);
     // Otherwise, get all of the ops that are newer
-    self._getOpsBulk(conditions, function(err, opsBulk) {
+    self._getOpsBulk(collectionName, conditions, function(err, opsBulk) {
       if (err) return callback(err);
       for (var i = 0; i < conditions.length; i++) {
         var id = conditions[i].d;
@@ -504,7 +506,7 @@ ShareDbMongo.prototype._getOps = function(collectionName, id, from, callback) {
   });
 };
 
-ShareDbMongo.prototype._getOpsBulk = function(conditions, callback) {
+ShareDbMongo.prototype._getOpsBulk = function(collectionName, conditions, callback) {
   this.getOpCollection(collectionName, function(err, opCollection) {
     if (err) return callback(err);
     var query = {
@@ -791,7 +793,7 @@ function normalizeQuery(inputQuery) {
   return query;
 }
 
-function castToDoc(id, snapshot, op) {
+function castToDoc(id, snapshot, opLink) {
   var doc = (
     typeof snapshot.data === 'object' &&
     snapshot.data !== null &&
@@ -803,7 +805,7 @@ function castToDoc(id, snapshot, op) {
   doc._type = snapshot.type;
   doc._v = snapshot.v;
   doc._m = snapshot.m;
-  doc._o = op._id;
+  doc._o = opLink;
   return doc;
 }
 
