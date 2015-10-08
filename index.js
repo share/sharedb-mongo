@@ -2,22 +2,6 @@ var mongodb = require('mongodb');
 var async = require('async');
 var DB = require('sharedb').DB;
 
-/* There are two ways to instantiate a sharedb-mongo wrapper.
- *
- * 1. The simplest way is to invoke the module and pass in your mongo DB
- * arguments as arguments to the module function. For example:
- *
- * var db = require('sharedb-mongo')('localhost:27017/test');
- *
- * 2. If you already have a mongo connection that you want to use, you
- * alternatively can pass it into sharedb-mongo:
- *
- * require('mongodb').connect('localhost:27017/test', function(err, mongo) {
- *   if (err) throw err;
- *   var db = require('sharedb-mongo')({mongo: mongo});
- * });
-*/
-
 module.exports = ShareDbMongo;
 
 function ShareDbMongo(mongo, options) {
