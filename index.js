@@ -326,7 +326,7 @@ ShareDbMongo.prototype.getOpsToSnapshot = function(collectionName, id, from, sna
     var err = getSnapshotOpLinkErorr(collectionName, id);
     return callback(err);
   }
-  self._getOps(collectionName, id, from, function(err, ops) {
+  this._getOps(collectionName, id, from, function(err, ops) {
     if (err) return callback(err);
     var filtered = getLinkedOps(ops, null, snapshot._opLink);
     callback(null, filtered);
