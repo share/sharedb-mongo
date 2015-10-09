@@ -16,9 +16,6 @@ function ShareDbMongo(mongo, options) {
   }
   if (!options) options = {};
 
-  // pollDebounce is the minimum time between query polls. Defaults to 1000ms
-  this.pollDebounce = (options.pollDebounce != null) ? options.pollDebounce : 1000;
-
   // pollDelay is a dodgy hack to work around race conditions replicating the
   // data out to the polling target secondaries. If a separate db is specified
   // for polling, it defaults to 300ms
