@@ -234,7 +234,6 @@ ShareDbMongo.prototype._writeSnapshot = function(collectionName, id, snapshot, o
 // **** Snapshot methods
 
 ShareDbMongo.prototype.getSnapshot = function(collectionName, id, fields, callback) {
-  var self = this;
   this.getCollection(collectionName, function(err, collection) {
     if (err) return callback(err);
     var query = {_id: id};
@@ -248,7 +247,6 @@ ShareDbMongo.prototype.getSnapshot = function(collectionName, id, fields, callba
 };
 
 ShareDbMongo.prototype.getSnapshotBulk = function(collectionName, ids, fields, callback) {
-  var self = this;
   this.getCollection(collectionName, function(err, collection) {
     if (err) return callback(err);
     var query = {_id: {$in: ids}};
