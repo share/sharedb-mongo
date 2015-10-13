@@ -186,7 +186,7 @@ ShareDbMongo.prototype._writeOp = function(collectionName, id, op, snapshot, cal
   if (typeof op.v !== 'number') {
     var err = {
       code: 4101,
-      message: 'Invalid op version ' + collectionName + ' ' + id + ' ' + op.v
+      message: 'Invalid op version ' + collectionName + '.' + id + ' ' + op.v
     };
     return callback(err);
   }
@@ -329,6 +329,8 @@ ShareDbMongo.prototype.getOpsToSnapshot = function(collectionName, id, from, sna
   this._getOps(collectionName, id, from, function(err, ops) {
     if (err) return callback(err);
     var filtered = getLinkedOps(ops, null, snapshot._opLink);
+    var err = checkOpsFrom(collectionName, id, filtered, from);
+    if (err) return callback(err);
     callback(null, filtered);
   });
 };
@@ -347,6 +349,8 @@ ShareDbMongo.prototype.getOps = function(collectionName, id, from, to, callback)
     self._getOps(collectionName, id, from, function(err, ops) {
       if (err) return callback(err);
       var filtered = filterOps(ops, doc, to);
+      var err = checkOpsFrom(collectionName, id, filtered, from);
+      if (err) return callback(err);
       callback(null, filtered);
     });
   });
@@ -390,17 +394,28 @@ ShareDbMongo.prototype.getOpsBulk = function(collectionName, fromMap, toMap, cal
         var ops = opsBulk[id];
         var doc = docMap[id];
         var to = toMap && toMap[id];
-        opsMap[id] = filterOps(ops, doc, to);
+        var filtered = filterOps(ops, doc, to);
+        var err = checkOpsFrom(collectionName, id, filtered, from);
+        if (err) return callback(err);
+        opsMap[id] = filtered;
       }
       callback(null, opsMap);
     });
   });
 };
 
+function checkOpsFrom(collectionName, id, ops, from) {
+  if (ops[0] && ops[0].v === from) return;
+  return {
+    code: 5103,
+    message: 'Missing ops from requested version ' + collectionName + '.' + id + ' ' + from
+  }
+};
+
 function getSnapshotOpLinkErorr(collectionName, id) {
   return {
     code: 5102,
-    message: 'Snapshot missing last operation field "_o" ' + collectionName + ' ' + id
+    message: 'Snapshot missing last operation field "_o" ' + collectionName + '.' + id
   };
 }
 

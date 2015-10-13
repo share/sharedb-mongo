@@ -56,6 +56,7 @@ Mongo errors are passed back directly. Additional error codes:
 
 * 5101 -- Already closed
 * 5102 -- Snapshot missing last operation field
+* 5103 -- Missing ops from requested version
 
 
 ## MIT License
