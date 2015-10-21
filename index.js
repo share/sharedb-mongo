@@ -673,7 +673,7 @@ ShareDbMongo.prototype.queryPollDoc = function(collectionName, id, inputQuery, o
         } else {
           // If the id is in the list, then it is equivalent to restrict to our
           // particular id and override the current value
-          queryId.$query._id = id;
+          query.$query._id = id;
         }
       } else {
         delete query.$query._id;
