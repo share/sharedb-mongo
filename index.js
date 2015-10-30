@@ -393,6 +393,7 @@ ShareDbMongo.prototype.getOpsBulk = function(collectionName, fromMap, toMap, cal
         var id = conditions[i].d;
         var ops = opsBulk[id];
         var doc = docMap[id];
+        var from = fromMap[id];
         var to = toMap && toMap[id];
         var filtered = filterOps(ops, doc, to);
         var err = checkOpsFrom(collectionName, id, filtered, from);
