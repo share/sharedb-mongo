@@ -40,6 +40,8 @@ describe('mongo db', function() {
           if (err) throw err;
           // Index for getting document(s) ops
           expect(indexes['d_1_v_1']).ok();
+          // Index for checking committed op(s) by src and seq
+          expect(indexes['src_1_seq_1_v_1']).ok();
           done()
         });
       });

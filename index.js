@@ -315,8 +315,11 @@ ShareDbMongo.prototype.getOpCollection = function(collectionName, callback) {
     // when there is a lot of data in the collection.
     collection.createIndex({d: 1, v: 1}, {background: true}, function(err) {
       if (err) return callback(err);
-      self.opIndexes[collectionName] = true;
-      callback(null, collection);
+      collection.createIndex({src: 1, seq: 1, v: 1}, {background: true}, function(err) {
+        if (err) return callback(err);
+        self.opIndexes[collectionName] = true;
+        callback(null, collection);
+      });
     });
   });
 };
@@ -401,6 +404,46 @@ ShareDbMongo.prototype.getOpsBulk = function(collectionName, fromMap, toMap, cal
         opsMap[id] = filtered;
       }
       callback(null, opsMap);
+    });
+  });
+};
+
+DB.prototype.getCommittedOpVersion = function(collectionName, id, snapshot, op, callback) {
+  var self = this;
+  this.getOpCollection(collectionName, function(err, opCollection) {
+    if (err) return callback(err);
+    var query = {
+      $query: {
+        src: op.src,
+        seq: op.seq
+      },
+      $orderby: {v: 1}
+    };
+    var projection = {v: 1, _id: 0};
+    // Find the earliest version at which the op may have been committed.
+    // Since ops are optimistically written prior to writing the snapshot, the
+    // op could end up being written multiple times or have been written but
+    // not count as committed if not backreferenced from the snapshot
+    opCollection.findOne(query, projection, function(err, doc) {
+      if (err) return callback(err);
+      // If we find no op with the same src and seq, we definitely don't have
+      // any match. This should prevent us from accidentally querying a huge
+      // history of ops
+      if (!doc) return callback();
+      // If we do find an op with the same src and seq, we still have to get
+      // the ops from the snapshot to figure out if the op was actually
+      // committed already, and at what version in case of multiple matches
+      var from = doc.v;
+      self.getOpsToSnapshot(collectionName, id, from, snapshot, function(err, ops) {
+        if (err) return callback(err);
+        for (var i = ops.length; i--;) {
+          var item = ops[i];
+          if (op.src === item.src && op.seq === item.seq) {
+            return callback(null, item.v);
+          }
+        }
+        callback();
+      });
     });
   });
 };
