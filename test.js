@@ -6,19 +6,10 @@ var assert = require('assert');
 function create(callback) {
   mongodb.connect('mongodb://localhost:27017/test', function(err, mongo) {
     if (err) throw err;
-    clear(mongo, function(err) {
+    mongo.dropDatabase(function(err) {
       if (err) throw err;
       var db = ShareDbMongo({mongo: mongo});
       callback(null, db, mongo);
-    });
-  });
-}
-function clear(mongo, callback) {
-  // Intentionally ignore errors, since drop returns an error if the
-  // collection doesn't exist yet
-  mongo.collection('testcollection').drop(function(err) {
-    mongo.collection('ops_testcollection').drop(function(err) {
-      callback();
     });
   });
 }
