@@ -240,7 +240,7 @@ ShareDbMongo.prototype.getSnapshot = function(collectionName, id, fields, callba
     var projection = getProjection(fields);
     collection.findOne(query, projection, function(err, doc) {
       if (err) return callback(err);
-      var snapshot = (doc) ? castToSnapshot(doc) : new MongoSnapshot(id, 0, null, null);
+      var snapshot = (doc) ? castToSnapshot(doc) : new MongoSnapshot(id, 0, null, undefined);
       callback(null, snapshot);
     });
   });
@@ -262,7 +262,7 @@ ShareDbMongo.prototype.getSnapshotBulk = function(collectionName, ids, fields, c
       for (var i = 0; i < ids.length; i++) {
         var id = ids[i];
         if (snapshotMap[id]) continue;
-        snapshotMap[id] = new MongoSnapshot(id, 0, null, null);
+        snapshotMap[id] = new MongoSnapshot(id, 0, null, undefined);
       }
       callback(null, snapshotMap);
     });
@@ -848,13 +848,11 @@ function normalizeQuery(inputQuery) {
 }
 
 function castToDoc(id, snapshot, opLink) {
-  var doc = (
-    typeof snapshot.data === 'object' &&
-    snapshot.data !== null &&
-    !Array.isArray(snapshot.data)
-  ) ?
-    shallowClone(snapshot.data) :
-    {_data: snapshot.data};
+  var data = snapshot.data;
+  var doc =
+    (isObject(data)) ? shallowClone(data) :
+    (data === undefined) ? {} :
+    {_data: data};
   doc._id = id;
   doc._type = snapshot.type;
   doc._v = snapshot.v;
@@ -870,10 +868,13 @@ function castToSnapshot(doc) {
   var data = doc._data;
   var meta = doc._m;
   var opLink = doc._o;
+  if (type == null) {
+    return new MongoSnapshot(id, version, null, undefined, meta, opLink);
+  }
   if (doc.hasOwnProperty('_data')) {
     return new MongoSnapshot(id, version, type, data, meta, opLink);
   }
-  var data = shallowClone(doc);
+  data = shallowClone(doc);
   delete data._id;
   delete data._v;
   delete data._type;
@@ -888,6 +889,10 @@ function MongoSnapshot(id, version, type, data, meta, opLink) {
   this.data = data;
   if (meta) this.m = meta;
   if (opLink) this._opLink = opLink;
+}
+
+function isObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function shallowClone(object) {
@@ -905,8 +910,8 @@ function shallowClone(object) {
 function getProjection(fields) {
   // Do not project when called by ShareDB submit
   if (fields === 'submit') return;
-  // When there is no projection specified, still exclude returning the metadata
-  // that is added to a doc for querying or auditing
+  // When there is no projection specified, still exclude returning the
+  // metadata that is added to a doc for querying or auditing
   if (!fields) return {_m: 0, _o: 0};
   var projection = {};
   for (var key in fields) {
