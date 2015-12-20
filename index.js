@@ -908,11 +908,12 @@ function shallowClone(object) {
 // only work properly for json documents--which are the only types for which
 // we really want projections.
 function getProjection(fields) {
-  // Do not project when called by ShareDB submit
-  if (fields === 'submit') return;
   // When there is no projection specified, still exclude returning the
   // metadata that is added to a doc for querying or auditing
   if (!fields) return {_m: 0, _o: 0};
+  // Do not project when called by ShareDB submit
+  if (fields.$submit) return;
+
   var projection = {};
   for (var key in fields) {
     projection[key] = 1;
