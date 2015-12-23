@@ -25,7 +25,7 @@ function ShareDbMongo(mongo, options) {
   // By default, we create indexes on any ops collection that is used
   this.disableIndexCreation = options.disableIndexCreation || false;
 
-  // The getOps() method depends on a collectionname_ops collection, and that
+  // The getOps() method depends on a separate operations collection, and that
   // collection should have an index on the operations stored there. We could
   // ask people to make these indexes themselves, but by default the mongo
   // driver will do it automatically. This approach will leak memory relative
@@ -274,16 +274,14 @@ ShareDbMongo.prototype.getSnapshotBulk = function(collectionName, ids, fields, c
 
 // Overwrite me if you want to change this behaviour.
 ShareDbMongo.prototype.getOplogCollectionName = function(collectionName) {
-  return 'ops_' + collectionName;
+  return 'o_' + collectionName;
 };
 
 ShareDbMongo.prototype.validateCollectionName = function(collectionName) {
   if (
     collectionName === 'system' || (
       collectionName[0] === 'o' &&
-      collectionName[1] === 'p' &&
-      collectionName[2] === 's' &&
-      collectionName[3] === '_'
+      collectionName[1] === '_'
     )
   ) {
     return {code: 4102, message: 'Invalid collection name ' + collectionName};

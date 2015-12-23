@@ -4,8 +4,8 @@ MongoDB database adapter for [sharedb](https://github.com/share/sharedb). This
 driver can be used both as a snapshot store and oplog.
 
 Snapshots are stored where you'd expect (the named collection with _id=id). In
-addition, operations are stored in `ops_COLLECTION`. For example, if you have
-a `users` collection, the operations are stored in `ops_users`.
+addition, operations are stored in `o_COLLECTION`. For example, if you have
+a `users` collection, the operations are stored in `o_users`.
 
 JSON document snapshots in sharedb-mongo are unwrapped so you can use mongo
 queries directly against JSON documents. (They just have some extra fields in

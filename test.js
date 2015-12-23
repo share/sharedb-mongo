@@ -36,7 +36,7 @@ describe('mongo db', function() {
       var mongo = this.mongo;
       this.db.commit('testcollection', 'foo', {v: 0, create: {}}, {}, function(err) {
         if (err) throw err;
-        mongo.collection('ops_testcollection').indexInformation(function(err, indexes) {
+        mongo.collection('o_testcollection').indexInformation(function(err, indexes) {
           if (err) throw err;
           // Index for getting document(s) ops
           expect(indexes['d_1_v_1']).ok();
