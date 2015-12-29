@@ -13,7 +13,7 @@
     "mocha": "^2.3.3"
   },
   "scripts": {
-    "test": "node_modules/.bin/mocha --reporter spec test.js"
+    "test": "node_modules/.bin/mocha --reporter spec --timeout 10000 test.js"
   },
   "repository": "git://github.com/share/sharedb-mongo.git",
   "author": "Nate Smith and Joseph Gentle",
