@@ -149,17 +149,20 @@ ShareDbMongo.prototype._connect = function(mongo, options) {
 };
 
 ShareDbMongo.prototype.close = function(callback) {
+  if (!callback) {
+    callback = function(err) {
+      if (err) throw err;
+    };
+  }
   var self = this;
   this.getDbs(function(err, mongo, mongoPoll) {
-    if (err) return callback && callback(err);
+    if (err) return callback(err);
     self.closed = true;
-    var closeCb = (mongoPoll) ?
-      function(err) {
-        if (err) return callback && callback(err);
-        mongoPoll.close(callback);
-      } :
-      callback;
-    mongo.close(closeCb);
+    mongo.close(function(err) {
+      if (err) return callback(err);
+      if (!mongoPoll) return callback();
+      mongoPoll.close(callback);
+    });
   });
 };
 
