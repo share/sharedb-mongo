@@ -447,6 +447,7 @@ DB.prototype.getCommittedOpVersion = function(collectionName, id, snapshot, op, 
 };
 
 function checkOpsFrom(collectionName, id, ops, from) {
+  if (ops.length === 0) return;
   if (ops[0] && ops[0].v === from) return;
   return {
     code: 5103,
