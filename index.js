@@ -47,7 +47,7 @@ function ShareDbMongo(mongo, options) {
   // Track whether the close method has been called
   this.closed = false;
 
-  if (typeof mongo === 'string') {
+  if (typeof mongo === 'string' || typeof mongo === 'function') {
     // We can only get the mongodb client instance in a callback, so
     // buffer up any requests received in the meantime
     this.mongo = null;
@@ -121,19 +121,26 @@ ShareDbMongo.prototype._flushPendingConnect = function() {
 };
 
 ShareDbMongo.prototype._connect = function(mongo, options) {
-  var self = this;
   // Create the mongo connection client connections if needed
+  //
+  // Throw errors in this function if we fail to connect, since we aren't
+  // implementing a way to retry
+  var self = this;
   if (options.mongoPoll) {
-    async.parallel({
-      mongo: function(parallelCb) {
-        mongodb.connect(mongo, options.mongoOptions, parallelCb);
-      },
-      mongoPoll: function(parallelCb) {
-        mongodb.connect(options.mongoPoll, options.mongoPollOptions, parallelCb);
-      }
-    }, function(err, results) {
-      // Just throw the error if we fail to connect, since we aren't
-      // implementing a way to retry
+    var tasks;
+    if (typeof mongo === 'function') {
+      tasks = {mongo: mongo, mongoPoll: options.mongoPoll};
+    } else {
+      tasks = {
+        mongo: function(parallelCb) {
+          mongodb.connect(mongo, options.mongoOptions, parallelCb);
+        },
+        mongoPoll: function(parallelCb) {
+          mongodb.connect(options.mongoPoll, options.mongoPollOptions, parallelCb);
+        }
+      };
+    }
+    async.parallel(tasks, function(err, results) {
       if (err) throw err;
       self.mongo = results.mongo;
       self.mongoPoll = results.mongoPoll;
@@ -141,11 +148,16 @@ ShareDbMongo.prototype._connect = function(mongo, options) {
     });
     return;
   }
-  mongodb.connect(mongo, options, function(err, db) {
+  var finish = function(err, db) {
     if (err) throw err;
     self.mongo = db;
     self._flushPendingConnect();
-  });
+  };
+  if (typeof mongo === 'function') {
+    mongo(finish);
+    return;
+  }
+  mongodb.connect(mongo, options, finish);
 };
 
 ShareDbMongo.prototype.close = function(callback) {
