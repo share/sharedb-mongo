@@ -253,7 +253,7 @@ ShareDbMongo.prototype.getSnapshot = function(collectionName, id, fields, callba
     if (err) return callback(err);
     var query = {_id: id};
     var projection = getProjection(fields);
-    collection.findOne(query, projection, function(err, doc) {
+    collection.find(query).limit(1).project(projection).next(function(err, doc) {
       if (err) return callback(err);
       var snapshot = (doc) ? castToSnapshot(doc) : new MongoSnapshot(id, 0, null, undefined);
       callback(null, snapshot);
@@ -266,7 +266,7 @@ ShareDbMongo.prototype.getSnapshotBulk = function(collectionName, ids, fields, c
     if (err) return callback(err);
     var query = {_id: {$in: ids}};
     var projection = getProjection(fields);
-    collection.find(query, projection).toArray(function(err, docs) {
+    collection.find(query).project(projection).toArray(function(err, docs) {
       if (err) return callback(err);
       var snapshotMap = {};
       for (var i = 0; i < docs.length; i++) {
@@ -426,18 +426,16 @@ DB.prototype.getCommittedOpVersion = function(collectionName, id, snapshot, op, 
   this.getOpCollection(collectionName, function(err, opCollection) {
     if (err) return callback(err);
     var query = {
-      $query: {
-        src: op.src,
-        seq: op.seq
-      },
-      $orderby: {v: 1}
+      src: op.src,
+      seq: op.seq
     };
     var projection = {v: 1, _id: 0};
+    var sort = {v: 1};
     // Find the earliest version at which the op may have been committed.
     // Since ops are optimistically written prior to writing the snapshot, the
     // op could end up being written multiple times or have been written but
     // not count as committed if not backreferenced from the snapshot
-    opCollection.findOne(query, projection, function(err, doc) {
+    opCollection.find(query).project(projection).sort(sort).limit(1).next(function(err, doc) {
       if (err) return callback(err);
       // If we find no op with the same src and seq, we definitely don't have
       // any match. This should prevent us from accidentally querying a huge
@@ -560,17 +558,15 @@ ShareDbMongo.prototype._getOps = function(collectionName, id, from, callback) {
   this.getOpCollection(collectionName, function(err, opCollection) {
     if (err) return callback(err);
     var query = {
-      $query: {
-        d: id,
-        v: {$gte: from}
-      },
-      $orderby: {v: 1}
+      d: id,
+      v: {$gte: from}
     };
     // Exclude the `d` field, which is only for use internal to livedb-mongo.
     // Also exclude the `m` field, which can be used to store metadata on ops
     // for tracking purposes
     var projection = {d: 0, m: 0};
-    opCollection.find(query, projection).toArray(callback);
+    var sort = {v: 1};
+    opCollection.find(query).project(projection).sort(sort).toArray(callback);
   });
 };
 
@@ -578,16 +574,14 @@ ShareDbMongo.prototype._getOpsBulk = function(collectionName, conditions, callba
   this.getOpCollection(collectionName, function(err, opCollection) {
     if (err) return callback(err);
     var query = {
-      $query: {$or: conditions},
-      $orderby: {d: 1, v: 1}
+      $or: conditions
     };
     // Exclude the `m` field, which can be used to store metadata on ops for
     // tracking purposes
     var projection = {m: 0};
-    opCollection.find(query, projection, function(err, cursor) {
-      if (err) return callback(err);
-      readOpsBulk(cursor, {}, null, null, callback);
-    });
+    var sort = {d: 1, v: 1};
+    var cursor = opCollection.find(query).project(projection).sort(sort);
+    readOpsBulk(cursor, {}, null, null, callback);
   });
 };
 
@@ -615,7 +609,7 @@ ShareDbMongo.prototype._getSnapshotOpLink = function(collectionName, id, callbac
     if (err) return callback(err);
     var query = {_id: id};
     var projection = {_id: 0, _o: 1, _v: 1};
-    collection.findOne(query, projection, callback);
+    collection.find(query).limit(1).project(projection).next(callback);
   });
 };
 
@@ -624,7 +618,7 @@ ShareDbMongo.prototype._getSnapshotOpLinkBulk = function(collectionName, ids, ca
     if (err) return callback(err);
     var query = {_id: {$in: ids}};
     var projection = {_o: 1, _v: 1};
-    collection.find(query, projection).toArray(callback);
+    collection.find(query).project(projection).toArray(callback);
   });
 };
 
@@ -673,7 +667,13 @@ ShareDbMongo.prototype._query = function(collection, inputQuery, projection, cal
     return;
   }
 
-  collection.find(query, projection, query.$findOptions).toArray(callback);
+  var cursor = collection.find(query.$query).project(projection);
+
+  if (query.$orderby) cursor = cursor.sort(query.$orderby);
+  if (query.$skip) cursor = cursor.skip(query.$skip);
+  if (query.$limit) cursor = cursor.limit(query.$limit);
+
+  cursor.toArray(callback);
 };
 
 ShareDbMongo.prototype.query = function(collectionName, inputQuery, fields, options, callback) {
@@ -748,7 +748,7 @@ ShareDbMongo.prototype.queryPollDoc = function(collectionName, id, inputQuery, o
       query.$query._id = id;
     }
 
-    collection.findOne(query, {_id: 1}, function(err, doc) {
+    collection.find(query.$query).limit(1).project({_id: 1}).next(function(err, doc) {
       callback(err, !!doc);
     });
   });
@@ -846,9 +846,6 @@ function normalizeQuery(inputQuery) {
     for (var key in inputQuery) {
       if (metaOperators[key]) {
         query[key] = inputQuery[key];
-      } else if (cursorOperators[key]) {
-        var findOptions = query.$findOptions || (query.$findOptions = {});
-        findOptions[cursorOperators[key]] = inputQuery[key];
       } else {
         query.$query[key] = inputQuery[key];
       }
@@ -941,18 +938,15 @@ var metaOperators = {
   $comment: true
 , $explain: true
 , $hint: true
+, $limit: true
 , $maxScan: true
 , $max: true
 , $min: true
 , $orderby: true
 , $returnKey: true
 , $showDiskLoc: true
+, $skip: true
 , $snapshot: true
 , $count: true
 , $aggregate: true
-};
-
-var cursorOperators = {
-  $limit: 'limit'
-, $skip: 'skip'
 };
