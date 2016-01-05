@@ -1,6 +1,6 @@
 {
   "name": "sharedb-mongo",
-  "version": "0.8.5",
+  "version": "0.8.6",
   "description": "MongoDB database adapter for ShareDB",
   "main": "index.js",
   "dependencies": {
