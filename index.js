@@ -577,36 +577,41 @@ ShareDbMongo.prototype._getOps = function(collectionName, id, from, callback) {
 ShareDbMongo.prototype._getOpsBulk = function(collectionName, conditions, callback) {
   this.getOpCollection(collectionName, function(err, opCollection) {
     if (err) return callback(err);
-    var query = {
-      $query: {$or: conditions},
-      $orderby: {d: 1, v: 1}
-    };
+    var query = {$or: conditions};
     // Exclude the `m` field, which can be used to store metadata on ops for
     // tracking purposes
     var projection = {m: 0};
-    opCollection.find(query, projection, function(err, cursor) {
-      if (err) return callback(err);
-      readOpsBulk(cursor, {}, null, null, callback);
-    });
+    var stream = opCollection.find(query, projection).stream();
+    readOpsBulk(stream, callback);
   });
 };
 
-function readOpsBulk(cursor, opsMap, id, ops, callback) {
-  cursor.nextObject(function(err, op) {
-    if (err) return callback(err);
-    if (op == null) {
-      if (id) opsMap[id] = ops;
-      return callback(null, opsMap);
+function readOpsBulk(stream, callback) {
+  var opsMap = {};
+  var errored;
+  stream.on('error', function(err) {
+    errored = true;
+    return callback(err);
+  });
+  stream.on('end', function() {
+    if (errored) return;
+    // Sort ops for each doc in ascending order by version
+    for (var id in opsMap) {
+      opsMap[id].sort(function(a, b) {
+        return a.v - b.v;
+      });
     }
-    if (id !== op.d) {
-      if (id) opsMap[id] = ops;
-      id = op.d;
-      ops = [op];
+    callback(null, opsMap);
+  });
+  // Read each op and push onto a list for the appropriate doc
+  stream.on('data', function(op) {
+    var id = op.d;
+    if (opsMap[id]) {
+      opsMap[id].push(op);
     } else {
-      ops.push(op);
+      opsMap[id] = [op];
     }
     delete op.d;
-    readOpsBulk(cursor, opsMap, id, ops, callback);
   });
 }
 
