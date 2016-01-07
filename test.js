@@ -1,10 +1,11 @@
 var expect = require('expect.js');
 var mongodb = require('mongodb');
 var ShareDbMongo = require('./index');
-var assert = require('assert');
+
+var mongoUrl = process.env.TEST_MONGO_URL || 'mongodb://localhost:27017/test';
 
 function create(callback) {
-  mongodb.connect('mongodb://localhost:27017/test', function(err, mongo) {
+  mongodb.connect(mongoUrl, function(err, mongo) {
     if (err) throw err;
     mongo.dropDatabase(function(err) {
       if (err) throw err;
