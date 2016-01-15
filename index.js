@@ -394,10 +394,8 @@ ShareDbMongo.prototype.getOpsBulk = function(collectionName, fromMap, toMap, cal
         var err = checkDocHasOp(collectionName, id, doc);
         if (err) return callback(err);
       }
-      conditions.push({
-        d: id,
-        v: {$gte: from}
-      });
+      var condition = getOpsQuery(id, from);
+      conditions.push(condition);
     }
     // Return right away if none of the snapshot versions are newer than the
     // requested versions
@@ -464,6 +462,7 @@ DB.prototype.getCommittedOpVersion = function(collectionName, id, snapshot, op, 
 function checkOpsFrom(collectionName, id, ops, from) {
   if (ops.length === 0) return;
   if (ops[0] && ops[0].v === from) return;
+  if (from == null) return;
   return {
     code: 5103,
     message: 'Missing ops from requested version ' + collectionName + '.' + id + ' ' + from
@@ -556,21 +555,21 @@ function getLinkedOps(ops, to, link) {
   return linkedOps;
 }
 
+function getOpsQuery(id, from) {
+  return (from == null) ?
+    {d: id} :
+    {d: id, v: {$gte: from}};
+}
+
 ShareDbMongo.prototype._getOps = function(collectionName, id, from, callback) {
   this.getOpCollection(collectionName, function(err, opCollection) {
     if (err) return callback(err);
-    var query = {
-      $query: {
-        d: id,
-        v: {$gte: from}
-      },
-      $orderby: {v: 1}
-    };
+    var query = getOpsQuery(id, from);
     // Exclude the `d` field, which is only for use internal to livedb-mongo.
     // Also exclude the `m` field, which can be used to store metadata on ops
     // for tracking purposes
     var projection = {d: 0, m: 0};
-    opCollection.find(query, projection).toArray(callback);
+    opCollection.find(query, projection).sort({v: 1}).toArray(callback);
   });
 };
 
