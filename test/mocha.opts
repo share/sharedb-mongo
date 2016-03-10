@@ -1,0 +1,4 @@
+--reporter spec
+--check-leaks
+--globals Promise
+--timeout 5000

@@ -1,6 +1,6 @@
 var expect = require('expect.js');
 var mongodb = require('mongodb');
-var ShareDbMongo = require('./index');
+var ShareDbMongo = require('../index');
 
 var mongoUrl = process.env.TEST_MONGO_URL || 'mongodb://localhost:27017/test';
 
