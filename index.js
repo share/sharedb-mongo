@@ -637,7 +637,7 @@ ShareDbMongo.prototype._getSnapshotOpLinkBulk = function(collectionName, ids, ca
 ShareDbMongo.prototype._query = function(collection, inputQuery, projection, callback) {
   var err = this.checkQuery(inputQuery);
   if (err) return callback(err);
-  var parsed = parseQuery(inputQuery);
+  var parsed = this._parseQuery(inputQuery);
 
   // Collection operations such as $aggregate run on the whole
   // collection. Only one operation is run. The result goes in the
@@ -726,12 +726,12 @@ ShareDbMongo.prototype.queryPoll = function(collectionName, inputQuery, options,
 
 ShareDbMongo.prototype.queryPollDoc = function(collectionName, id, inputQuery, options, callback) {
   var self = this;
-  this.getCollectionPoll(collectionName, function(err, collection) {
+  self.getCollectionPoll(collectionName, function(err, collection) {
     if (err) return callback(err);
 
     var err = self.checkQuery(inputQuery);
     if (err) return callback(err);
-    var parsed = parseQuery(inputQuery);
+    var parsed = this._parseQuery(inputQuery);
 
     // Run the query against a particular mongo document by adding an _id filter
     var queryId = parsed.query._id;
@@ -948,7 +948,7 @@ function ParsedQuery(
   this.cursorOperationValue = cursorOperationValue;
 }
 
-function parseQuery(inputQuery) {
+ShareDbMongo.prototype._parseQuery = function(inputQuery) {
   // Parse sharedb-mongo query format into an object with these keys:
   // * query: The actual mongo query part of the input query
   // * collectionOperationKey, collectionOperationValue: Key and value of the
@@ -1009,7 +1009,9 @@ function parseQuery(inputQuery) {
   // Deleted documents are kept around so that we can start their version from
   // the last version if they get recreated. Lack of a type indicates that a
   // snapshot is deleted, so don't return any documents with a null type
-  if (!query._type) query._type = {$ne: null};
+  if (deletedDocMightSatisfyQuery(query)) {
+    query._type = {$ne: null};
+  }
 
   return new ParsedQuery(
     query,
@@ -1019,6 +1021,133 @@ function parseQuery(inputQuery) {
     cursorOperationKey,
     cursorOperationValue
   );
+}
+
+// Might a deleted doc (one that contains {_type: null} and no other
+// fields) satisfy a query?
+//
+// Return true if it definitely can, or if we're not sure. (This
+// function is used as an optimization to see whether we can avoid
+// augmenting the query to ignore deleted documents)
+function deletedDocMightSatisfyQuery(query) {
+  // Any query with `{foo: value}` with non-null `value` will never
+  // match deleted documents (that are empty other than the `_type`
+  // field).
+  //
+  // This generalizes to additional classes of queries. Here’s a
+  // recursive description of queries that can't match a deleted doc:
+  // In general, a query with `{foo: X}` can't match a deleted doc
+  // if `X` is guaranteed to not match null or undefined. In addition
+  // to non-null values, the following clauses are guaranteed to not
+  // match null or undefined:
+  //
+  // * `{$in: [A, B, C]}}` where all of A, B, C are non-null.
+  // * `{$ne: null}`
+  // * `{$exists: true}`
+  // * `{$and: [A, B, C]}` where at least one of A, B, C is guaranteed to
+  //    not match null
+  // * `{$or: [A, B, C]}` where all of A, B, C are guaranteed to not match null
+  // * `{$gt: ...}`, `{gte: ...}`, `{$lt: ...}`, `{$lte: ...}`
+  //
+  // In addition, some queries that have `$and` or `$or` at the
+  // top-level can't match deleted docs:
+  // * `{$and: [A, B, C]}`, where at least one of A, B, C are queries
+  //   guaranteed to not match `{_type: null}`
+  // * `{$or: [A, B, C]}`, where all of A, B, C are queries guaranteed
+  //   to not match `{_type: null}`
+  //
+  // There are more queries that can't match deleted docs but they
+  // aren’t that common, e.g. ones using `$type` or bit-wise
+  // operators.
+  if ('$and' in query) {
+    for (var i = 0; i < query.$and.length; i++) {
+      if (!deletedDocMightSatisfyQuery(query.$and[i])) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  if ('$or' in query) {
+    for (var i = 0; i < query.$or.length; i++) {
+      if (deletedDocMightSatisfyQuery(query.$or[i])) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  for (var prop in query) {
+    // When using top-level operators that we don't understand, play
+    // it safe
+    if (prop[0] === '$')
+      return true;
+
+    if (guaranteedToNotMatchNull(query[prop]))
+      return false;
+  }
+
+  return true;
+}
+
+function guaranteedToNotMatchNull(clause) {
+  if (typeof clause === "number" ||
+      typeof clause === "boolean" ||
+      typeof clause === "string") {
+    return true;
+  }
+
+  if (typeof clause === "object" &&
+      Object.getPrototypeOf(clause) === Object.prototype /* only POJOs */) {
+    if (Object.keys(clause).length > 1) {
+      // Not sure what this means for Mongo, for example {foo: {$nin:
+      // [3], $in: [2]}} but we shouldn't assume we understand it
+      // correctly. Better safe than sorry.
+      return false;
+    }
+
+    if ('$in' in clause) {
+      for (var i = 0; i < clause.$in.length; i++) {
+        if (clause.$in[i] === null) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    if ('$ne' in clause) {
+      return clause.$ne === null;
+    }
+
+    if ('$exists' in clause) {
+      return clause.$exists;
+    }
+
+    if ('$and' in clause) {
+      for (var i = 0; i < clause.$and.length; i++) {
+        if (guaranteedToNotMatchNull(clause.$and[i])) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    if ('$or' in clause) {
+      for (var i = 0; i < clause.$or.length; i++) {
+        if (!guaranteedToNotMatchNull(clause.$or[i])) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    if ('$gt' in clause || '$gte' in clause || '$lt' in clause || '$lte' in clause) {
+      return true;
+    }
+  }
+
+  // If unsure, return false.
+  return false;
 }
 
 function castToDoc(id, snapshot, opLink) {

@@ -358,3 +358,69 @@ describe('mongo db connection', function() {
   });
 });
 
+describe('normalize query', function() {
+  it('only adds _type: {$ne: null} when necessary', function() {
+    var normalize = ShareDbMongo.prototype._normalizeQuery;
+
+    var needToAddTypeNeNull = function(query) {
+      var queryWithTypeNeNull = shallowClone(query);
+      queryWithTypeNeNull._type = {$ne: null};
+      expect(normalize(query)).eql({$query: queryWithTypeNeNull});
+    };
+
+    var queryIsSafeAsIs = function(query) {
+      expect(normalize(query)).eql({$query: query});
+    };
+
+    needToAddTypeNeNull({});
+    queryIsSafeAsIs    ({foo: 1});
+    needToAddTypeNeNull({foo: {$bitsAllSet: 1}}); // We don't try to analyze $bitsAllSet
+
+    needToAddTypeNeNull({foo: {$ne: 1}});
+    queryIsSafeAsIs    ({foo: {$ne: 1}, bar: 1});
+    queryIsSafeAsIs    ({foo: {$ne: null}});
+
+    queryIsSafeAsIs    ({foo: {$gt: 1}});
+    queryIsSafeAsIs    ({foo: {$gte: 1}});
+    queryIsSafeAsIs    ({foo: {$lt: 1}});
+    queryIsSafeAsIs    ({foo: {$lte: 1}});
+
+    queryIsSafeAsIs    ({foo: {$exists: true}});
+    needToAddTypeNeNull({foo: {$exists: false}});
+    queryIsSafeAsIs    ({foo: {$exists: true}, bar: {$exists: false}});
+
+    needToAddTypeNeNull({$not: {foo: 1}});
+    needToAddTypeNeNull({$not: {foo: null}}); // We don't try to analyze $not
+
+    queryIsSafeAsIs    ({foo: {$in: [1, 2, 3]}});
+    needToAddTypeNeNull({foo: {$in: [null, 2, 3]}});
+    queryIsSafeAsIs    ({foo: {$in: [null, 2, 3]}, bar: 1});
+
+    queryIsSafeAsIs    ({foo: {$and: [{$gt: 1}, {$ne: null}]}});
+    queryIsSafeAsIs    ({foo: {$and: [{$ne: 1}, {$ne: null}]}});
+    needToAddTypeNeNull({foo: {$and: [{$ne: 1}, {$ne: 2}]}});
+
+    queryIsSafeAsIs    ({foo: {$or: [{$gt: 1}, {$ne: null}]}});
+    needToAddTypeNeNull({foo: {$or: [{$ne: 1}, {$ne: null}]}});
+    needToAddTypeNeNull({foo: {$or: [{$ne: 1}, {$ne: 2}]}});
+
+    queryIsSafeAsIs    ({$and: [{foo: {$ne: null}}, {bar: {$ne: null}}]});
+    queryIsSafeAsIs    ({$and: [{foo: {$ne: 1   }}, {bar: {$ne: null}}]});
+    needToAddTypeNeNull({$and: [{foo: {$ne: 1   }}, {bar: {$ne: 1   }}]});
+
+    queryIsSafeAsIs    ({$or: [{foo: {$ne: null}}, {bar: {$ne: null}}]});
+    needToAddTypeNeNull({$or: [{foo: {$ne: 1   }}, {bar: {$ne: null}}]});
+    needToAddTypeNeNull({$or: [{foo: {$ne: 1   }}, {bar: {$ne: 1   }}]});
+
+    // Malformed query? We shouldn't assume anything.
+    needToAddTypeNeNull({foo: {$nin: [3], $in: [2]}});
+  });
+});
+
+function shallowClone(object) {
+  var out = {};
+  for (var key in object) {
+    out[key] = object[key];
+  }
+  return out;
+}
