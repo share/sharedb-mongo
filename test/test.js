@@ -143,6 +143,45 @@ describe('mongo db', function() {
       });
     });
 
+    it('queryPollDoc correctly filters on _id', function(done) {
+      var snapshot = {type: 'json0', v: 1, data: {}, id: "test"};
+      var db = this.db;
+
+      var cases = [
+        {query: {_id: "test"}, expectedHasDoc: true},
+        {query: {_id: "nottest"}, expectedHasDoc: false},
+        {query: {_id: /test/}, expectedHasDoc: true},
+        {query: {_id: /nottest/}, expectedHasDoc: false},
+        {query: {_id: {$in: ["test"]}}, expectedHasDoc: true},
+        {query: {_id: {$in: ["nottest"]}}, expectedHasDoc: false}
+      ];
+
+      db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, function(err) {
+        if (err) throw err;
+
+        var numCallbacksWaiting = cases.length;
+        for (var i = 0; i < cases.length; i++) {
+          // create new scope for variables used in a callback defined inside
+          (function() {
+            var query = cases[i].query;
+            var caseIndex = i;
+            var expectedHasDoc = cases[i].expectedHasDoc;
+
+            db.queryPollDoc(
+              'testcollection', snapshot.id, {$query: query}, null, function(err, hasDoc) {
+                if (err) throw err;
+
+                // include case index in test so that failing tests
+                // point to a specific failures
+                expect({caseIndex: caseIndex, hasDoc: hasDoc}).eql(
+                  {caseIndex: caseIndex, hasDoc: expectedHasDoc});
+                if (--numCallbacksWaiting === 0) done();
+              });
+          })();
+        }
+      });
+    });
+
     it('$count should count documents', function(done) {
       var snapshots = [
         {type: 'json0', v: 1, data: {x: 1, y: 1}},
