@@ -265,3 +265,40 @@ describe('mongo db', function() {
     });
   });
 });
+
+describe('mongo db connection', function() {
+  describe('via url string', function() {
+    beforeEach(function(done) {
+      this.db = ShareDbMongo({mongo: mongoUrl});
+
+      // This will enqueue the callback, testing the 'pendingConnect'
+      // logic.
+      this.db.getDbs(function(err, mongo, mongoPoll) {
+        if (err) throw err;
+        mongo.dropDatabase(function(err) {
+          if (err) throw err;
+          done();
+        });
+      });
+    });
+
+    afterEach(function(done) {
+      this.db.close(done);
+    });
+
+    it('commit and query', function(done) {
+      var snapshot = {type: 'json0', v: 1, data: {}, id: "test"};
+      var db = this.db;
+
+      db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, function(err) {
+        if (err) throw err;
+        db.query('testcollection', {}, null, null, function(err, results) {
+          if (err) throw err;
+          expect(results).eql([snapshot]);
+          done();
+        });
+      });
+    });
+  });
+});
+
