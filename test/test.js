@@ -203,6 +203,27 @@ describe('mongo db', function() {
       });
     });
 
+    it('$orderby, $skip and $limit should order, skip and limit', function(done) {
+      var snapshots = [
+        {type: 'json0', v: 1, data: {x: 1}, id: "test1"},
+        {type: 'json0', v: 1, data: {x: 3}, id: "test2"}, // intentionally added out of sort order
+        {type: 'json0', v: 1, data: {x: 2}, id: "test3"}
+      ];
+      var db = this.db;
+      db.commit('testcollection', 'test1', {v: 0, create: {}}, snapshots[0], function(err) {
+        db.commit('testcollection', 'test2', {v: 0, create: {}}, snapshots[1], function(err) {
+          db.commit('testcollection', 'test3', {v: 0, create: {}}, snapshots[2], function(err) {
+            var query = {$orderby: {x: 1}, $skip: 1, $limit: 1};
+            db.query('testcollection', query, null, null, function(err, results, extra) {
+              if (err) throw err;
+              expect(results).eql([snapshots[2]]);
+              done();
+            });
+          });
+        });
+      });
+    });
+
     it('$distinct should perform distinct operation', function(done) {
       var snapshots = [
         {type: 'json0', v: 1, data: {x: 1, y: 1}},
