@@ -838,6 +838,22 @@ ShareDbMongo.prototype.checkQuery = function(query) {
   }
 };
 
+// XXX duplicated in sharedb-mingo-memory; should we extract to
+// sharedb-mongo-utilities?
+//
+// Given a key/value comparison query, return a query object with that
+// filter and a specified sort order. The 'order' argument looks like
+// [['foo', 1], ['bar', -1]] for sort by foo asending, then bar
+// descending
+ShareDbMongo.prototype.makeSortedQuery = function(query, order) {
+  // Convert order to Mongo's expected structure
+  var mongoOrder = {};
+  for (var i = 0; i < order.length; i++) {
+    mongoOrder[order[i][0]] = order[i][1];
+  }
+  return {$query: query, $orderby: mongoOrder};
+};
+
 function normalizeQuery(inputQuery) {
   // Box queries inside of a $query and clone so that we know where to look
   // for selctors and can modify them without affecting the original object
