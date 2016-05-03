@@ -358,62 +358,93 @@ describe('mongo db connection', function() {
   });
 });
 
-describe('normalize query', function() {
-  it('only adds _type: {$ne: null} when necessary', function() {
-    var normalize = ShareDbMongo.prototype._normalizeQuery;
+describe('parse query', function() {
+  var parse = ShareDbMongo.prototype._parseQuery;
 
-    var needToAddTypeNeNull = function(query) {
-      var queryWithTypeNeNull = shallowClone(query);
-      queryWithTypeNeNull._type = {$ne: null};
-      expect(normalize(query)).eql({$query: queryWithTypeNeNull});
-    };
+  var needToAddTypeNeNull = function(query) {
+    var queryWithTypeNeNull = shallowClone(query);
+    queryWithTypeNeNull._type = {$ne: null};
+    expect(parse(query)).eql({query: queryWithTypeNeNull});
+  };
 
-    var queryIsSafeAsIs = function(query) {
-      expect(normalize(query)).eql({$query: query});
-    };
+  var queryIsSafeAsIs = function(query) {
+    expect(parse(query)).eql({query: query});
+  };
 
-    needToAddTypeNeNull({});
-    queryIsSafeAsIs    ({foo: 1});
-    needToAddTypeNeNull({foo: {$bitsAllSet: 1}}); // We don't try to analyze $bitsAllSet
+  describe('adds _type: {$ne: null} when necessary', function() {
+    it('basic', function() {
+      needToAddTypeNeNull({});
+      needToAddTypeNeNull({foo: null});
+      queryIsSafeAsIs({foo: 1});
+      needToAddTypeNeNull({foo: {$bitsAllSet: 1}}); // We don't try to analyze $bitsAllSet
+    });
 
-    needToAddTypeNeNull({foo: {$ne: 1}});
-    queryIsSafeAsIs    ({foo: {$ne: 1}, bar: 1});
-    queryIsSafeAsIs    ({foo: {$ne: null}});
+    it('$ne', function() {
+      needToAddTypeNeNull({foo: {$ne: 1}});
+      queryIsSafeAsIs({foo: {$ne: 1}, bar: 1});
+      queryIsSafeAsIs({foo: {$ne: null}});
+    });
 
-    queryIsSafeAsIs    ({foo: {$gt: 1}});
-    queryIsSafeAsIs    ({foo: {$gte: 1}});
-    queryIsSafeAsIs    ({foo: {$lt: 1}});
-    queryIsSafeAsIs    ({foo: {$lte: 1}});
+    it('comparisons', function() {
+      queryIsSafeAsIs({foo: {$gt: 1}});
+      queryIsSafeAsIs({foo: {$gte: 1}});
+      queryIsSafeAsIs({foo: {$lt: 1}});
+      queryIsSafeAsIs({foo: {$lte: 1}});
+      queryIsSafeAsIs({foo: {$gte: 2, $lte: 5}});
+      needToAddTypeNeNull({foo: {$gte: null, $lte: null}});
+    });
 
-    queryIsSafeAsIs    ({foo: {$exists: true}});
-    needToAddTypeNeNull({foo: {$exists: false}});
-    queryIsSafeAsIs    ({foo: {$exists: true}, bar: {$exists: false}});
+    it('$exists', function() {
+      queryIsSafeAsIs({foo: {$exists: true}});
+      needToAddTypeNeNull({foo: {$exists: false}});
+      queryIsSafeAsIs({foo: {$exists: true}, bar: {$exists: false}});
+    });
 
-    needToAddTypeNeNull({$not: {foo: 1}});
-    needToAddTypeNeNull({$not: {foo: null}}); // We don't try to analyze $not
+    it('$not', function() {
+      needToAddTypeNeNull({$not: {foo: 1}});
+      needToAddTypeNeNull({$not: {foo: null}}); // We don't try to analyze $not
+    });
 
-    queryIsSafeAsIs    ({foo: {$in: [1, 2, 3]}});
-    needToAddTypeNeNull({foo: {$in: [null, 2, 3]}});
-    queryIsSafeAsIs    ({foo: {$in: [null, 2, 3]}, bar: 1});
+    it('$in', function() {
+      queryIsSafeAsIs({foo: {$in: [1, 2, 3]}});
+      needToAddTypeNeNull({foo: {$in: [null, 2, 3]}});
+      queryIsSafeAsIs({foo: {$in: [null, 2, 3]}, bar: 1});
+    })
 
-    queryIsSafeAsIs    ({foo: {$and: [{$gt: 1}, {$ne: null}]}});
-    queryIsSafeAsIs    ({foo: {$and: [{$ne: 1}, {$ne: null}]}});
-    needToAddTypeNeNull({foo: {$and: [{$ne: 1}, {$ne: 2}]}});
+    it('field-level $and', function() {
+      queryIsSafeAsIs({foo: {$and: [{$gt: 1}, {$ne: null}]}});
+      queryIsSafeAsIs({foo: {$and: [{$ne: 1}, {$ne: null}]}});
+      needToAddTypeNeNull({foo: {$and: [{$ne: 1}, {$ne: 2}]}});
+    });
 
-    queryIsSafeAsIs    ({foo: {$or: [{$gt: 1}, {$ne: null}]}});
-    needToAddTypeNeNull({foo: {$or: [{$ne: 1}, {$ne: null}]}});
-    needToAddTypeNeNull({foo: {$or: [{$ne: 1}, {$ne: 2}]}});
+    it('field-level $or', function() {
+      queryIsSafeAsIs({foo: {$or: [{$gt: 1}, {$ne: null}]}});
+      needToAddTypeNeNull({foo: {$or: [{$ne: 1}, {$ne: null}]}});
+      needToAddTypeNeNull({foo: {$or: [{$ne: 1}, {$ne: 2}]}});
+    });
 
-    queryIsSafeAsIs    ({$and: [{foo: {$ne: null}}, {bar: {$ne: null}}]});
-    queryIsSafeAsIs    ({$and: [{foo: {$ne: 1   }}, {bar: {$ne: null}}]});
-    needToAddTypeNeNull({$and: [{foo: {$ne: 1   }}, {bar: {$ne: 1   }}]});
+    it('top-level $and', function() {
+      queryIsSafeAsIs({$and: [{foo: {$ne: null}}, {bar: {$ne: null}}]});
+      queryIsSafeAsIs({$and: [{foo: {$ne: 1}}, {bar: {$ne: null}}]});
+      needToAddTypeNeNull({$and: [{foo: {$ne: 1}}, {bar: {$ne: 1}}]});
+    });
 
-    queryIsSafeAsIs    ({$or: [{foo: {$ne: null}}, {bar: {$ne: null}}]});
-    needToAddTypeNeNull({$or: [{foo: {$ne: 1   }}, {bar: {$ne: null}}]});
-    needToAddTypeNeNull({$or: [{foo: {$ne: 1   }}, {bar: {$ne: 1   }}]});
+    it('top-level $or', function() {
+      queryIsSafeAsIs({$or: [{foo: {$ne: null}}, {bar: {$ne: null}}]});
+      needToAddTypeNeNull({$or: [{foo: {$ne: 1}}, {bar: {$ne: null}}]});
+      needToAddTypeNeNull({$or: [{foo: {$ne: 1}}, {bar: {$ne: 1}}]});
+    });
 
-    // Malformed query? We shouldn't assume anything.
-    needToAddTypeNeNull({foo: {$nin: [3], $in: [2]}});
+    it('malformed queries', function() {
+      // if we don't understand the query, definitely don't mark it as
+      // "safe as is"
+      needToAddTypeNeNull({$or: {foo: 3}});
+      needToAddTypeNeNull({foo: {$or: 3}});
+      needToAddTypeNeNull({$not: [1, 2]});
+      needToAddTypeNeNull({foo: {$bad: 1}});
+      needToAddTypeNeNull({$bad: [2, 3]});
+      needToAddTypeNeNull({$and: [[{foo: 1}]]});
+    });
   });
 });
 
