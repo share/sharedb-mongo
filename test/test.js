@@ -1,6 +1,7 @@
 var expect = require('expect.js');
 var mongodb = require('mongodb');
 var ShareDbMongo = require('../index');
+var makeSortedQuery = require('sharedb-mingo-memory/make-sorted-query');
 
 var mongoUrl = process.env.TEST_MONGO_URL || 'mongodb://localhost:27017/test';
 
@@ -15,7 +16,7 @@ function create(callback) {
   });
 }
 
-require('sharedb/test/db')(create);
+require('sharedb/test/db')(create, makeSortedQuery);
 
 describe('mongo db', function() {
   beforeEach(function(done) {
@@ -87,7 +88,7 @@ describe('mongo db', function() {
       db.commit('testcollection', 'test1', {v: 0, create: {}}, snapshots[0], function(err) {
         db.commit('testcollection', 'test2', {v: 0, create: {}}, snapshots[1], function(err) {
           db.commit('testcollection', 'test3', {v: 0, create: {}}, snapshots[2], function(err) {
-            var query = {$distinct: true, $field: 'y', $query: {}};
+            var query = {$distinct: {field: 'y'}};
             db.query('testcollection', query, null, null, function(err, results, extra) {
               if (err) throw err;
               expect(extra).eql([1, 2]);
@@ -145,16 +146,16 @@ describe('mongo db', function() {
         db.commit('testcollection', 'test2', {v: 0, create: {}}, snapshots[1], function(err) {
           db.commit('testcollection', 'test3', {v: 0, create: {}}, snapshots[2], function(err) {
             var query = {
-              $mapReduce: true,
-              $map: function() {
-                emit(this.player, this.score);
-              },
-              $reduce: function(key, values) {
-                return values.reduce(function(t, s) {
-                  return t + s;
-                });
-              },
-              $query: {}
+              $mapReduce: {
+                map: function() {
+                  emit(this.player, this.score);
+                },
+                reduce: function(key, values) {
+                  return values.reduce(function(t, s) {
+                    return t + s;
+                  });
+                }
+              }
             };
             db.query('testcollection', query, null, null, function(err) {
               expect(err).ok();
@@ -177,16 +178,16 @@ describe('mongo db', function() {
         db.commit('testcollection', 'test2', {v: 0, create: {}}, snapshots[1], function(err) {
           db.commit('testcollection', 'test3', {v: 0, create: {}}, snapshots[2], function(err) {
             var query = {
-              $mapReduce: true,
-              $map: function() {
-                emit(this.player, this.score);
-              },
-              $reduce: function(key, values) {
-                return values.reduce(function(t, s) {
-                  return t + s;
-                });
-              },
-              $query: {}
+              $mapReduce: {
+                map: function() {
+                  emit(this.player, this.score);
+                },
+                reduce: function(key, values) {
+                  return values.reduce(function(t, s) {
+                    return t + s;
+                  });
+                }
+              }
             };
             db.query('testcollection', query, null, null, function(err, results, extra) {
               if (err) throw err;
