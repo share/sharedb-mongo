@@ -807,7 +807,9 @@ ShareDbMongo.prototype.skipPoll = function(collectionName, id, op, query) {
 
 function getFields(query) {
   var fields = {};
-  getInnerFields(query.$query, fields);
+  if (query.hasOwnProperty('$distinct')) {
+    fields[query.$distinct.split('.')[0]] = true;
+  }
   getInnerFields(query.$orderby, fields);
   getInnerFields(query.$sort, fields);
   getInnerFields(query, fields);
