@@ -637,48 +637,47 @@ ShareDbMongo.prototype._getSnapshotOpLinkBulk = function(collectionName, ids, ca
 ShareDbMongo.prototype._query = function(collection, inputQuery, projection, callback) {
   var err = this.checkQuery(inputQuery);
   if (err) return callback(err);
-  var query = normalizeQuery(inputQuery);
+  var parsed = parseQuery(inputQuery);
 
   // Collection operations such as $aggregate run on the whole
   // collection. Only one operation is run. The result goes in the
   // "extra" argument in the callback.
-  for (var key in collectionOperations) {
-    if (query.hasOwnProperty(key)) {
-      var operation = collectionOperations[key];
-      operation(collection, query.$query, query[key], function(err, extra) {
+  for (var key in parsed.collectionOperations) {
+    var operation = collectionOperations[key];
+    operation(
+      collection,
+      parsed.query,
+      parsed.collectionOperations[key],
+      function(err, extra) {
         if (err) return callback(err);
         callback(null, [], extra);
-      });
-      return;
-    }
+      }
+    );
+    return;
   }
 
   // No collection operations were used. Create an initial cursor for
   // the query, that can be transformed later.
-  var cursor = collection.find(query.$query).project(projection);
+  var cursor = collection.find(parsed.query).project(projection);
 
   // Cursor transforms such as $skip transform the cursor into a new
   // one. If multiple transforms are specified on inputQuery, they all
   // run.
-  for (var key in cursorTransforms) {
-    if (query.hasOwnProperty(key)) {
-      var transform = cursorTransforms[key];
-      cursor = transform(cursor, query[key]);
-    }
+  for (var key in parsed.cursorTransforms) {
+    var transform = cursorTransforms[key];
+    cursor = transform(cursor, parsed.cursorTransforms[key]);
   }
 
   // Cursor operations such as $count run on the cursor, after all
   // transforms. Only one operation is run. The result goes in the
   // "extra" argument in the callback.
-  for (var key in cursorOperations) {
-    if (query.hasOwnProperty(key)) {
-      var operator = cursorOperations[key];
-      operator(cursor, query[key], function(err, extra) {
-        if (err) return callback(err);
-        callback(null, [], extra);
-      });
-      return;
-    }
+  for (var key in parsed.cursorOperations) {
+    var operator = cursorOperations[key];
+    operator(cursor, parsed.cursorOperations[key], function(err, extra) {
+      if (err) return callback(err);
+      callback(null, [], extra);
+    });
+    return;
   }
 
   // If no collection operation or cursor operations were used, return
@@ -727,10 +726,10 @@ ShareDbMongo.prototype.queryPollDoc = function(collectionName, id, inputQuery, o
 
     var err = self.checkQuery(inputQuery);
     if (err) return callback(err);
-    var query = normalizeQuery(inputQuery);
+    var parsed = parseQuery(inputQuery);
 
     // Run the query against a particular mongo document by adding an _id filter
-    var queryId = query.$query._id;
+    var queryId = parsed.query._id;
     if (queryId && typeof queryId === 'object') {
       // Check if the query contains the id directly in the common pattern of
       // a query for a specific list of ids, such as {_id: {$in: [1, 2, 3]}}
@@ -742,12 +741,12 @@ ShareDbMongo.prototype.queryPollDoc = function(collectionName, id, inputQuery, o
         } else {
           // If the id is in the list, then it is equivalent to restrict to our
           // particular id and override the current value
-          query.$query._id = id;
+          parsed.query.query._id = id;
         }
       } else {
-        delete query.$query._id;
-        query.$query.$and = (query.$query.$and) ?
-          query.$query.$and.concat({_id: id}, {_id: queryId}) :
+        delete parsed.query._id;
+        parsed.query.$and = (parsed.query.$and) ?
+          parsed.query.$and.concat({_id: id}, {_id: queryId}) :
           [{_id: id}, {_id: queryId}];
       }
     } else if (queryId && queryId !== id) {
@@ -756,10 +755,10 @@ ShareDbMongo.prototype.queryPollDoc = function(collectionName, id, inputQuery, o
       return callback(null, false);
     } else {
       // Restrict the query to this particular document
-      query.$query._id = id;
+      parsed.query._id = id;
     }
 
-    collection.find(query.$query).limit(1).project({_id: 1}).next(function(err, doc) {
+    collection.find(parsed.query).limit(1).project({_id: 1}).next(function(err, doc) {
       callback(err, !!doc);
     });
   });
@@ -849,7 +848,7 @@ function opContainsAnyField(op, fields) {
 // Return error string on error. Call before parseQuery.
 ShareDbMongo.prototype.checkQuery = function(query) {
   if (query.$query) {
-    return {code: 4106, message: '$query property deprecated in queries'}
+    return {code: 4106, message: '$query property deprecated in queries'};
   }
 
   for (var key in query) {
@@ -875,31 +874,53 @@ ShareDbMongo.prototype.checkQuery = function(query) {
   }
 };
 
-function normalizeQuery(inputQuery) {
-  // Box queries inside of a $query and clone so that we know where to look
-  // for selctors and can modify them without affecting the original object
-  var query;
+function parseQuery(inputQuery) {
+  // Parse sharedb-mongo query format for predictable grouping of
+  // query, collectionOperations, cursorTransforms, cursorOperations.
+  //
+  // Examples:
+  //
+  // parseQuery({foo: {$ne: 'bar'}, $distinct: {field: 'x'}}) ->
+  // {
+  //   query: {foo: {$ne: 'bar'}},
+  //   collectionOperations: {$distinct: {field: 'x'}}}
+  // }
+  //
+  // parseQuery({foo: 'bar', $limit: 2, $count: true}) ->
+  // {
+  //   query: {foo: 'bar'},
+  //   cursorTransforms: {$limit: 2},
+  //   cursorOperations: {$count: true}
+  // }
+
+  var parsed = {
+    query: {},
+    collectionOperations: {},
+    cursorTransforms: {},
+    cursorOperations: {}
+  };
+
   if (inputQuery.$query) {
     throw new Error("unexpected: should have called checkQuery");
   } else {
-    query = {$query: {}};
     for (var key in inputQuery) {
-      if (
-        collectionOperations[key] ||
-        cursorOperations[key] ||
-        cursorTransforms[key]
-      ) {
-        query[key] = inputQuery[key];
+      if (collectionOperations[key]) {
+        parsed.collectionOperations[key] = inputQuery[key];
+      } else if (cursorTransforms[key]) {
+        parsed.cursorTransforms[key] = inputQuery[key];
+      } else if (cursorOperations[key]) {
+        parsed.cursorOperations[key] = inputQuery[key];
       } else {
-        query.$query[key] = inputQuery[key];
+        parsed.query[key] = inputQuery[key];
       }
     }
   }
+
   // Deleted documents are kept around so that we can start their version from
   // the last version if they get recreated. Lack of a type indicates that a
   // snapshot is deleted, so don't return any documents with a null type
-  if (!query.$query._type) query.$query._type = {$ne: null};
-  return query;
+  if (!parsed.query._type) parsed.query._type = {$ne: null};
+  return parsed;
 }
 
 function castToDoc(id, snapshot, opLink) {
