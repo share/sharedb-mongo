@@ -770,13 +770,29 @@ ShareDbMongo.prototype.queryPollDoc = function(collectionName, id, inputQuery, o
 
 // Can we poll by checking the query limited to the particular doc only?
 ShareDbMongo.prototype.canPollDoc = function(collectionName, query) {
-  return !(
+  for (var operation in collectionOperations) {
+    if (query.hasOwnProperty(operation))
+      return false;
+  }
+
+  for (var operation in cursorOperations) {
+    if (query.hasOwnProperty(operation))
+      return false;
+  }
+
+  if (
     query.hasOwnProperty('$sort') ||
     query.hasOwnProperty('$orderby') ||
     query.hasOwnProperty('$limit') ||
     query.hasOwnProperty('$skip') ||
-    query.hasOwnProperty('$count')
-  );
+    query.hasOwnProperty('$max') ||
+    query.hasOwnProperty('$min') ||
+    query.hasOwnProperty('$returnKey')
+  ) {
+    return false;
+  }
+
+  return true;
 };
 
 // Return true to avoid polling if there is no possibility that an op could
@@ -993,23 +1009,54 @@ var cursorOperations = {
       cursor.count(cb);
     }
   },
-  '$explain': function(cursor, value, cb) {
-    cursor.explain(value, cb);
+  '$explain': function(cursor, verbosity, cb) {
+    cursor.explain(verbosity, cb);
+  },
+  '$map': function(cursor, fn, cb) {
+    cursor.map(fn, cb);
   }
 };
 
 var cursorTransforms = {
-  '$comment': function(cursor, value) { return cursor.comment(value); },
-  '$hint': function(cursor, value) { return cursor.hint(value); },
+  '$batchSize': function(cursor, size) { return cursor.batchSize(size); },
+  '$comment': function(cursor, text) { return cursor.comment(text); },
+  '$hint': function(cursor, index) { return cursor.hint(index); },
   '$max': function(cursor, value) { return cursor.max(value); },
   '$maxScan': function(cursor, value) { return cursor.maxScan(value); },
+  '$maxTimeMS': function(cursor, milliseconds) {
+    return cursor.maxTimeMS(milliseconds);
+  },
   '$min': function(cursor, value) { return cursor.min(value); },
+  '$noCursorTimeout': function(cursor) {
+    // no argument to cursor method
+    return cursor.noCursorTimeout();
+  },
   '$orderby': function(cursor, value) {
     console.warn('Deprecated: $orderby; Use $sort.');
     return cursor.sort(value);
   },
-  '$returnKey': function(cursor, value) { return cursor.returnKey(value); },
-  '$snapshot': function(cursor, value) { return cursor.snapshot(value); },
+  '$readConcern': function(cursor, level) {
+    return cursor.readConcern(level);
+  },
+  '$readPref': function(cursor, args) {
+    // The Mongo driver cursor method takes two argments. Our queries
+    // have a single value for the '$readPref' property. Interpret as
+    // an object with {mode, tagSet}.
+    if (typeof args !== 'object')
+      throw new Error("expected object");
+
+    var mode = args.mode;
+    var tagSet = args.tagSet;
+    return cursor.readPref(mode, tagSet);
+  },
+  '$returnKey': function(cursor) {
+    // no argument to cursor method
+    return cursor.returnKey();
+  },
+  '$snapshot': function(cursor) {
+    // no argument to cursor method
+    return cursor.snapshot();
+  },
   '$sort': function(cursor, value) { return cursor.sort(value); },
   '$skip': function(cursor, value) { return cursor.skip(value); },
   '$limit': function(cursor, value) { return cursor.limit(value); },
@@ -1017,5 +1064,8 @@ var cursorTransforms = {
     console.warn('Deprecated: $showDiskLoc; Use $showRecordId.');
     return cursor.showRecordId(value);
   },
-  '$showRecordId': function(cursor, value) { return cursor.showRecordId(value); }
+  '$showRecordId': function(cursor) {
+    // no argument to cursor method
+    return cursor.showRecordId();
+  }
 };
