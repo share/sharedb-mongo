@@ -79,7 +79,7 @@ describe('mongo db', function() {
     });
 
     it('$query is deprecated', function(done) {
-      this.db.queryPollDoc('testcollection', 'somedoc', {$query: {}}, null, function(err) {
+      this.db.query('testcollection', {$query: {}}, null, null, function(err) {
         expect(err).ok();
         expect(err.code).eql(4106);
         done();
@@ -87,7 +87,7 @@ describe('mongo db', function() {
     });
 
     it('unknown query operator error', function(done) {
-      this.db.queryPollDoc('testcollection', 'somedoc', {$asdfasdf: {}}, null, function(err) {
+      this.db.query('testcollection', {$asdfasdf: {}}, null, null, function(err) {
         expect(err).ok();
         expect(err.code).eql(4107);
         done();
@@ -95,7 +95,7 @@ describe('mongo db', function() {
     });
 
     it('only one collection operation allowed', function(done) {
-      this.db.queryPollDoc('testcollection', 'somedoc', {$distinct: {y: 1}, $aggregate: {}}, null, function(err) {
+      this.db.query('testcollection', {$distinct: {y: 1}, $aggregate: {}}, null, null, function(err) {
         expect(err).ok();
         expect(err.code).eql(4108);
         done();
@@ -103,7 +103,7 @@ describe('mongo db', function() {
     });
 
     it('only one cursor operation allowed', function(done) {
-      this.db.queryPollDoc('testcollection', 'somedoc', {$count: true, $explain: true}, null, function(err) {
+      this.db.query('testcollection', {$count: true, $explain: true}, null, null, function(err) {
         expect(err).ok();
         expect(err.code).eql(4109);
         done();
@@ -111,17 +111,34 @@ describe('mongo db', function() {
     });
 
     it('cursor transform can\'t run after collection operation', function(done) {
-      this.db.queryPollDoc('testcollection', 'somedoc', {$distinct: {y: 1}, $sort: {y: 1}}, null, function(err) {
+      this.db.query('testcollection', {$distinct: {y: 1}, $sort: {y: 1}}, null, null, function(err) {
         expect(err).ok();
         expect(err.code).eql(4110);
         done();
       });
     });
 
-    it('cursor operation can\'t run after colletction operation', function(done) {
-      this.db.queryPollDoc('testcollection', 'somedoc', {$distinct: {y: 1}, $count: true}, null, function(err) {
+    it('cursor operation can\'t run after collection operation', function(done) {
+      this.db.query('testcollection', {$distinct: {y: 1}, $count: true}, null, null, function(err) {
         expect(err).ok();
         expect(err.code).eql(4110);
+        done();
+      });
+    });
+
+    it('non-object $readPref should return error', function(done) {
+      this.db.query('testcollection', {$readPref: true}, null, null, function(err) {
+        expect(err).ok();
+        expect(err.code).eql(4111);
+        done();
+      });
+    });
+
+    it('malformed $mapReduce', function(done) {
+      this.db.allowJSQueries = true; // required for $mapReduce
+      this.db.query('testcollection', {$mapReduce: true}, null, null, function(err) {
+        expect(err).ok();
+        expect(err.code).eql(4111);
         done();
       });
     });

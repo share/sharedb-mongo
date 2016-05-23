@@ -642,11 +642,11 @@ ShareDbMongo.prototype._query = function(collection, inputQuery, projection, cal
   // Collection operations such as $aggregate run on the whole
   // collection. Only one operation is run. The result goes in the
   // "extra" argument in the callback.
-  if (parsed.collectionOperation) {
-    collectionOperations[parsed.collectionOperation.key](
+  if (parsed.collectionOperationKey) {
+    collectionOperationsMap[parsed.collectionOperationKey](
       collection,
       parsed.query,
-      parsed.collectionOperation.value,
+      parsed.collectionOperationValue,
       function(err, extra) {
         if (err) return callback(err);
         callback(null, [], extra);
@@ -663,17 +663,20 @@ ShareDbMongo.prototype._query = function(collection, inputQuery, projection, cal
   // one. If multiple transforms are specified on inputQuery, they all
   // run.
   for (var key in parsed.cursorTransforms) {
-    var transform = cursorTransforms[key];
+    var transform = cursorTransformsMap[key];
     cursor = transform(cursor, parsed.cursorTransforms[key]);
+    if (!cursor) {
+      return callback({code: 4111, message: "Malformed query operator"});
+    }
   }
 
   // Cursor operations such as $count run on the cursor, after all
   // transforms. Only one operation is run. The result goes in the
   // "extra" argument in the callback.
-  if (parsed.cursorOperation) {
-    cursorOperations[parsed.cursorOperation.key](
+  if (parsed.cursorOperationKey) {
+    cursorOperationsMap[parsed.cursorOperationKey](
       cursor,
-      parsed.cursorOperation.value,
+      parsed.cursorOperationValue,
       function(err, extra) {
         if (err) return callback(err);
         callback(null, [], extra);
@@ -771,14 +774,11 @@ ShareDbMongo.prototype.queryPollDoc = function(collectionName, id, inputQuery, o
 
 // Can we poll by checking the query limited to the particular doc only?
 ShareDbMongo.prototype.canPollDoc = function(collectionName, query) {
-  for (var operation in collectionOperations) {
-    if (query.hasOwnProperty(operation))
-      return false;
+  for (var operation in collectionOperationsMap) {
+    if (query.hasOwnProperty(operation)) return false;
   }
-
-  for (var operation in cursorOperations) {
-    if (query.hasOwnProperty(operation))
-      return false;
+  for (var operation in cursorOperationsMap) {
+    if (query.hasOwnProperty(operation)) return false;
   }
 
   if (
@@ -803,15 +803,23 @@ ShareDbMongo.prototype.skipPoll = function(collectionName, id, op, query) {
   // should be able to assume that the op is structured validly
   if (op.create || op.del) return false;
   if (!op.op) return true;
+
+  // Right now, always re-poll if using a collection operation such as
+  // $distinct or a cursor operation such as $count. This could be
+  // optimized further in some cases.
+  for (var operation in collectionOperationsMap) {
+    if (query.hasOwnProperty(operation)) return false;
+  }
+  for (var operation in cursorOperationsMap) {
+    if (query.hasOwnProperty(operation)) return false;
+  }
+
   var fields = getFields(query);
   return !opContainsAnyField(op.op, fields);
 };
 
 function getFields(query) {
   var fields = {};
-  if (query.hasOwnProperty('$distinct')) {
-    fields[query.$distinct.split('.')[0]] = true;
-  }
   getInnerFields(query.$orderby, fields);
   getInnerFields(query.$sort, fields);
   getInnerFields(query, fields);
@@ -849,55 +857,14 @@ function opContainsAnyField(op, fields) {
 
 // Utility methods
 
-// Return error string on error. Call before parseQuery.
+// Return {code: ..., message: ...}  on error. Call before parseQuery.
 ShareDbMongo.prototype.checkQuery = function(query) {
   if (query.$query) {
     return {code: 4106, message: '$query property deprecated in queries'};
   }
 
-  var foundCollectionOperation = null; // only one allowed
-  var foundCursorOperation = null; // only one allowed
-  for (var key in query) {
-    if (key[0] === '$') {
-      if (collectionOperations[key]) {
-        if (foundCollectionOperation) {
-          return {
-            code: 4108,
-            message: 'Only one collection operation allowed. ' +
-              'Found ' + foundCollectionOperation + ' and ' + key
-          }
-        }
-        foundCollectionOperation = key;
-      } else if (cursorOperations[key]) {
-        if (foundCollectionOperation) {
-          return {
-            code: 4110,
-            message: 'Cursor method ' + key + ' can\'t run after ' +
-              'collection method ' + foundCollectionOperation
-          }
-        }
-        if (foundCursorOperation) {
-          return {
-            code: 4109,
-            message: 'Only one cursor operation allowed. ' +
-              'Found ' + foundCursorOperation + ' and ' + key
-          }
-        }
-        foundCursorOperation = key;
-      } else if (cursorTransforms[key]) {
-        if (foundCollectionOperation) {
-          return {
-            code: 4110,
-            message: 'Cursor method ' + key + ' can\'t run after ' +
-              'collection method ' + foundCollectionOperation
-          }
-        }
-        // more than one allowed
-      } else {
-        return {code: 4107, message: 'Unknown query operator: ' + key};
-      }
-    }
-  }
+  var validMongoErr = checkValidMongo(query);
+  if (validMongoErr) return validMongoErr;
 
   if (!this.allowJSQueries) {
     if (query.$where != null) {
@@ -913,56 +880,130 @@ ShareDbMongo.prototype.checkQuery = function(query) {
   }
 };
 
+// Check that any keys starting with $ are valid Mongo methods. Verify
+// that:
+// * There is at most one collection operation like $mapReduce
+// * If there is a collection operation then there are no cursor methods
+// * There is at most one cursor operation like $count
+//
+// Return {code: ..., message: ...} on error.
+function checkValidMongo(query) {
+  var collectionOperationKey = null; // only one allowed
+  var foundCursorMethod = false; // transform or operation
+  var cursorOperationKey = null; // only one allowed
+
+  for (var key in query) {
+    if (key[0] === '$') {
+      if (collectionOperationsMap[key]) {
+        // Found collection operation. Check that it's unique.
+
+        if (collectionOperationKey) {
+          return {
+            code: 4108,
+            message: 'Only one collection operation allowed. ' +
+              'Found ' + collectionOperationKey + ' and ' + key
+          }
+        }
+        collectionOperationKey = key;
+      } else if (cursorOperationsMap[key]) {
+        if (cursorOperationKey) {
+          return {
+            code: 4109,
+            message: 'Only one cursor operation allowed. ' +
+              'Found ' + cursorOperationKey + ' and ' + key
+          }
+        }
+        cursorOperationKey = key;
+        foundCursorMethod = true;
+      } else if (cursorTransformsMap[key]) {
+        foundCursorMethod = true;
+      } else {
+        return {code: 4107, message: 'Unknown query operator: ' + key};
+      }
+    }
+  }
+
+  if (collectionOperationKey && foundCursorMethod) {
+    return {
+      code: 4110,
+      message: 'Cursor methods can\'t run after collection method ' +
+        collectionOperationKey
+    };
+  }
+
+  return null;
+}
+
+function ParsedQuery(
+  query,
+  collectionOperationKey,
+  collectionOperationValue,
+  cursorTransforms,
+  cursorOperationKey,
+  cursorOperationValue
+) {
+  this.query = query;
+  this.collectionOperationKey = collectionOperationKey;
+  this.collectionOperationValue = collectionOperationValue;
+  this.cursorTransforms = cursorTransforms;
+  this.cursorOperationKey = cursorOperationKey;
+  this.cursorOperationValue = cursorOperationValue;
+}
+
 function parseQuery(inputQuery) {
-  // Parse sharedb-mongo query format for predictable grouping of
-  // query, collectionOperations, cursorTransforms, cursorOperations.
+  // Parse sharedb-mongo query format into an object with these keys:
+  // * query: The actual mongo query part of the input query
+  // * collectionOperationKey, collectionOperationValue: Key and value of the
+  //   single collection operation (eg $mapReduce) defined in the input query,
+  //   or null
+  // * cursorTransforms: Map of all the cursor transforms in the input query
+  //   (eg $sort)
+  // * cursorOperationKey, cursorOperationValue: Key and value of the single
+  //   cursor operation (eg $count) defined in the input query, or null
   //
   // Examples:
   //
   // parseQuery({foo: {$ne: 'bar'}, $distinct: {field: 'x'}}) ->
   // {
   //   query: {foo: {$ne: 'bar'}},
-  //   collectionOperations: {$distinct: {field: 'x'}}}
+  //   collectionOperationKey: '$distinct',
+  //   collectionOperationValue: {field: 'x'},
+  //   cursorTransforms: {},
+  //   cursorOperationKey: null,
+  //   cursorOperationValue: null
   // }
   //
   // parseQuery({foo: 'bar', $limit: 2, $count: true}) ->
   // {
   //   query: {foo: 'bar'},
+  //   collectionOperationKey: null,
+  //   collectionOperationValue: null
   //   cursorTransforms: {$limit: 2},
-  //   cursorOperations: {$count: true}
+  //   cursorOperationKey: '$count',
+  //   cursorOperationValue: 2
   // }
 
-  var parsed = {
-    query: {},
-    collectionOperation: null,
-    cursorTransforms: {},
-    cursorOperation: null
-  };
+  var query = {};
+  var collectionOperationKey = null;
+  var collectionOperationValue = null;
+  var cursorTransforms = {};
+  var cursorOperationKey = null;
+  var cursorOperationValue = null;
 
   if (inputQuery.$query) {
-    throw new Error("unexpected: should have called checkQuery");
+    throw new Error("unexpected $query: should have called checkQuery");
   } else {
     for (var key in inputQuery) {
-      if (collectionOperations[key]) {
-        if (parsed.collectionOperation) {
-          throw new Error("unexpected: more than one collection operation");
-        }
-        parsed.collectionOperation = {
-          key: key,
-          value: inputQuery[key]
-        }
-      } else if (cursorTransforms[key]) {
-        parsed.cursorTransforms[key] = inputQuery[key];
-      } else if (cursorOperations[key]) {
-        if (parsed.cursorOperation) {
-          throw new Error("unexpected: more than one cursor operation");
-        }
-        parsed.cursorOperation = {
-          key: key,
-          value: inputQuery[key]
-        }
+      if (collectionOperationsMap[key]) {
+        collectionOperationKey = key;
+        collectionOperationValue = inputQuery[key];
+      } else if (cursorTransformsMap[key]) {
+        cursorTransforms[key] = inputQuery[key];
+      } else if (cursorOperationsMap[key]) {
+        cursorOperationKey = key;
+        cursorOperationValue = inputQuery[key];
       } else {
-        parsed.query[key] = inputQuery[key];
+        query[key] = inputQuery[key];
       }
     }
   }
@@ -970,8 +1011,16 @@ function parseQuery(inputQuery) {
   // Deleted documents are kept around so that we can start their version from
   // the last version if they get recreated. Lack of a type indicates that a
   // snapshot is deleted, so don't return any documents with a null type
-  if (!parsed.query._type) parsed.query._type = {$ne: null};
-  return parsed;
+  if (!query._type) query._type = {$ne: null};
+
+  return new ParsedQuery(
+    query,
+    collectionOperationKey,
+    collectionOperationValue,
+    cursorTransforms,
+    cursorOperationKey,
+    cursorOperationValue
+  );
 }
 
 function castToDoc(id, snapshot, opLink) {
@@ -1050,7 +1099,7 @@ function getProjection(fields) {
   return projection;
 }
 
-var collectionOperations = {
+var collectionOperationsMap = {
   '$distinct': function(collection, query, value, cb) {
     collection.distinct(value.field, query, cb);
   },
@@ -1058,6 +1107,9 @@ var collectionOperations = {
     collection.aggregate(value, cb);
   },
   '$mapReduce': function(collection, query, value, cb) {
+    if (typeof value !== 'object') {
+      return cb({code: 4111, message: 'Malformed query operator: $mapReduce'});
+    }
     var mapReduceOptions = {
       query: query,
       out: {inline: 1},
@@ -1068,18 +1120,9 @@ var collectionOperations = {
   }
 };
 
-var cursorOperations = {
+var cursorOperationsMap = {
   '$count': function(cursor, value, cb) {
-    // Note: For backcompat reasons, specify applySkipLimit via
-    // {$count: {applySkipLimit: ...}} rather than via {$count:
-    // ...}. Lots of app code assumed the original behavior of
-    // {$count: true} which was implemented as a collection operation
-    // rather than a cursor operation.
-    if (typeof value === 'object') {
-      cursor.count(value.applySkipLimit || false, cb);
-    } else {
-      cursor.count(cb);
-    }
+    cursor.count(cb);
   },
   '$explain': function(cursor, verbosity, cb) {
     cursor.explain(verbosity, cb);
@@ -1089,7 +1132,7 @@ var cursorOperations = {
   }
 };
 
-var cursorTransforms = {
+var cursorTransformsMap = {
   '$batchSize': function(cursor, size) { return cursor.batchSize(size); },
   '$comment': function(cursor, text) { return cursor.comment(text); },
   '$hint': function(cursor, index) { return cursor.hint(index); },
@@ -1110,16 +1153,12 @@ var cursorTransforms = {
   '$readConcern': function(cursor, level) {
     return cursor.readConcern(level);
   },
-  '$readPref': function(cursor, args) {
+  '$readPref': function(cursor, value) {
     // The Mongo driver cursor method takes two argments. Our queries
     // have a single value for the '$readPref' property. Interpret as
     // an object with {mode, tagSet}.
-    if (typeof args !== 'object')
-      throw new Error("expected object");
-
-    var mode = args.mode;
-    var tagSet = args.tagSet;
-    return cursor.readPref(mode, tagSet);
+    if (typeof value !== 'object') return null;
+    return cursor.readPref(value.mode, value.tagSet);
   },
   '$returnKey': function(cursor) {
     // no argument to cursor method
