@@ -78,6 +78,54 @@ describe('mongo db', function() {
       });
     });
 
+    it('$query is deprecated', function(done) {
+      this.db.queryPollDoc('testcollection', 'somedoc', {$query: {}}, null, function(err) {
+        expect(err).ok();
+        expect(err.code).eql(4106);
+        done();
+      });
+    });
+
+    it('unknown query operator error', function(done) {
+      this.db.queryPollDoc('testcollection', 'somedoc', {$asdfasdf: {}}, null, function(err) {
+        expect(err).ok();
+        expect(err.code).eql(4107);
+        done();
+      });
+    });
+
+    it('only one collection operation allowed', function(done) {
+      this.db.queryPollDoc('testcollection', 'somedoc', {$distinct: {y: 1}, $aggregate: {}}, null, function(err) {
+        expect(err).ok();
+        expect(err.code).eql(4108);
+        done();
+      });
+    });
+
+    it('only one cursor operation allowed', function(done) {
+      this.db.queryPollDoc('testcollection', 'somedoc', {$count: true, $explain: true}, null, function(err) {
+        expect(err).ok();
+        expect(err.code).eql(4109);
+        done();
+      });
+    });
+
+    it('cursor transform can\'t run after collection operation', function(done) {
+      this.db.queryPollDoc('testcollection', 'somedoc', {$distinct: {y: 1}, $sort: {y: 1}}, null, function(err) {
+        expect(err).ok();
+        expect(err.code).eql(4110);
+        done();
+      });
+    });
+
+    it('cursor operation can\'t run after colletction operation', function(done) {
+      this.db.queryPollDoc('testcollection', 'somedoc', {$distinct: {y: 1}, $count: true}, null, function(err) {
+        expect(err).ok();
+        expect(err.code).eql(4110);
+        done();
+      });
+    });
+
     it('$distinct should perform distinct operation', function(done) {
       var snapshots = [
         {type: 'json0', v: 1, data: {x: 1, y: 1}},

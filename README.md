@@ -57,6 +57,9 @@ Mongo errors are passed back directly. Additional error codes:
 * 4105 -- $aggregate queries disabled
 * 4106 -- $query property deprecated in queries
 * 4107 -- Unknown query operator
+* 4108 -- Only one collection operation allowed
+* 4109 -- Only one cursor operation allowed
+* 4110 -- Cursor method can't run after collection method
 
 #### 5100 -- Internal error - DB
 

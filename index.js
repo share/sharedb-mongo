@@ -642,12 +642,11 @@ ShareDbMongo.prototype._query = function(collection, inputQuery, projection, cal
   // Collection operations such as $aggregate run on the whole
   // collection. Only one operation is run. The result goes in the
   // "extra" argument in the callback.
-  for (var key in parsed.collectionOperations) {
-    var operation = collectionOperations[key];
-    operation(
+  if (parsed.collectionOperation) {
+    collectionOperations[parsed.collectionOperation.key](
       collection,
       parsed.query,
-      parsed.collectionOperations[key],
+      parsed.collectionOperation.value,
       function(err, extra) {
         if (err) return callback(err);
         callback(null, [], extra);
@@ -671,12 +670,15 @@ ShareDbMongo.prototype._query = function(collection, inputQuery, projection, cal
   // Cursor operations such as $count run on the cursor, after all
   // transforms. Only one operation is run. The result goes in the
   // "extra" argument in the callback.
-  for (var key in parsed.cursorOperations) {
-    var operator = cursorOperations[key];
-    operator(cursor, parsed.cursorOperations[key], function(err, extra) {
-      if (err) return callback(err);
-      callback(null, [], extra);
-    });
+  if (parsed.cursorOperation) {
+    cursorOperations[parsed.cursorOperation.key](
+      cursor,
+      parsed.cursorOperation.value,
+      function(err, extra) {
+        if (err) return callback(err);
+        callback(null, [], extra);
+      }
+    );
     return;
   }
 
@@ -853,12 +855,47 @@ ShareDbMongo.prototype.checkQuery = function(query) {
     return {code: 4106, message: '$query property deprecated in queries'};
   }
 
+  var foundCollectionOperation = null; // only one allowed
+  var foundCursorOperation = null; // only one allowed
   for (var key in query) {
-    if (
-      key[0] === '$' && !collectionOperations[key] &&
-      !cursorTransforms[key] && !cursorOperations[key]
-    ) {
-      return {code: 4107, message: 'Unknown query operator: ' + key};
+    if (key[0] === '$') {
+      if (collectionOperations[key]) {
+        if (foundCollectionOperation) {
+          return {
+            code: 4108,
+            message: 'Only one collection operation allowed. ' +
+              'Found ' + foundCollectionOperation + ' and ' + key
+          }
+        }
+        foundCollectionOperation = key;
+      } else if (cursorOperations[key]) {
+        if (foundCollectionOperation) {
+          return {
+            code: 4110,
+            message: 'Cursor method ' + key + ' can\'t run after ' +
+              'collection method ' + foundCollectionOperation
+          }
+        }
+        if (foundCursorOperation) {
+          return {
+            code: 4109,
+            message: 'Only one cursor operation allowed. ' +
+              'Found ' + foundCursorOperation + ' and ' + key
+          }
+        }
+        foundCursorOperation = key;
+      } else if (cursorTransforms[key]) {
+        if (foundCollectionOperation) {
+          return {
+            code: 4110,
+            message: 'Cursor method ' + key + ' can\'t run after ' +
+              'collection method ' + foundCollectionOperation
+          }
+        }
+        // more than one allowed
+      } else {
+        return {code: 4107, message: 'Unknown query operator: ' + key};
+      }
     }
   }
 
@@ -897,9 +934,9 @@ function parseQuery(inputQuery) {
 
   var parsed = {
     query: {},
-    collectionOperations: {},
+    collectionOperation: null,
     cursorTransforms: {},
-    cursorOperations: {}
+    cursorOperation: null
   };
 
   if (inputQuery.$query) {
@@ -907,11 +944,23 @@ function parseQuery(inputQuery) {
   } else {
     for (var key in inputQuery) {
       if (collectionOperations[key]) {
-        parsed.collectionOperations[key] = inputQuery[key];
+        if (parsed.collectionOperation) {
+          throw new Error("unexpected: more than one collection operation");
+        }
+        parsed.collectionOperation = {
+          key: key,
+          value: inputQuery[key]
+        }
       } else if (cursorTransforms[key]) {
         parsed.cursorTransforms[key] = inputQuery[key];
       } else if (cursorOperations[key]) {
-        parsed.cursorOperations[key] = inputQuery[key];
+        if (parsed.cursorOperation) {
+          throw new Error("unexpected: more than one cursor operation");
+        }
+        parsed.cursorOperation = {
+          key: key,
+          value: inputQuery[key]
+        }
       } else {
         parsed.query[key] = inputQuery[key];
       }
