@@ -89,14 +89,6 @@ describe('mongo db', function() {
       });
     });
 
-    it('unknown query operator error', function(done) {
-      this.db.query('testcollection', {$asdfasdf: {}}, null, null, function(err) {
-        expect(err).ok();
-        expect(err.code).eql(4107);
-        done();
-      });
-    });
-
     it('only one collection operation allowed', function(done) {
       this.db.query('testcollection', {$distinct: {y: 1}, $aggregate: {}}, null, null, function(err) {
         expect(err).ok();
@@ -132,16 +124,16 @@ describe('mongo db', function() {
     it('non-object $readPref should return error', function(done) {
       this.db.query('testcollection', {$readPref: true}, null, null, function(err) {
         expect(err).ok();
-        expect(err.code).eql(4111);
+        expect(err.code).eql(4107);
         done();
       });
     });
 
-    it('malformed $mapReduce', function(done) {
+    it('malformed $mapReduce should return error', function(done) {
       this.db.allowJSQueries = true; // required for $mapReduce
       this.db.query('testcollection', {$mapReduce: true}, null, null, function(err) {
         expect(err).ok();
-        expect(err.code).eql(4111);
+        expect(err.code).eql(4107);
         done();
       });
     });
@@ -171,7 +163,7 @@ describe('mongo db', function() {
             var expectedHasDoc = cases[i].expectedHasDoc;
 
             db.queryPollDoc(
-              'testcollection', snapshot.id, {$query: query}, null, function(err, hasDoc) {
+              'testcollection', snapshot.id, query, null, function(err, hasDoc) {
                 if (err) throw err;
 
                 // include case index in test so that failing tests
