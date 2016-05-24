@@ -666,7 +666,7 @@ ShareDbMongo.prototype._query = function(collection, inputQuery, projection, cal
     var transform = cursorTransformsMap[key];
     cursor = transform(cursor, parsed.cursorTransforms[key]);
     if (!cursor) {
-      return callback({code: 4111, message: "Malformed query operator"});
+      return callback({code: 4107, message: "Malformed query operator"});
     }
   }
 
@@ -746,7 +746,7 @@ ShareDbMongo.prototype.queryPollDoc = function(collectionName, id, inputQuery, o
         } else {
           // If the id is in the list, then it is equivalent to restrict to our
           // particular id and override the current value
-          parsed.query.query._id = id;
+          parsed.query._id = id;
         }
       } else {
         delete parsed.query._id;
@@ -917,8 +917,6 @@ function checkValidMongo(query) {
         foundCursorMethod = true;
       } else if (cursorTransformsMap[key]) {
         foundCursorMethod = true;
-      } else {
-        return {code: 4107, message: 'Unknown query operator: ' + key};
       }
     }
   }
@@ -1108,7 +1106,7 @@ var collectionOperationsMap = {
   },
   '$mapReduce': function(collection, query, value, cb) {
     if (typeof value !== 'object') {
-      return cb({code: 4111, message: 'Malformed query operator: $mapReduce'});
+      return cb({code: 4107, message: 'Malformed query operator: $mapReduce'});
     }
     var mapReduceOptions = {
       query: query,

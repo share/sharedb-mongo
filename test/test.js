@@ -64,6 +64,9 @@ describe('mongo db', function() {
   });
 
   describe('query', function() {
+    // Run query tests for the types of queries supported by ShareDBMingo
+    require('sharedb-mingo-memory/test/query')();
+
     it('does not allow $where queries', function(done) {
       this.db.query('testcollection', {$where: 'true'}, null, null, function(err, results) {
         expect(err).ok();
@@ -82,14 +85,6 @@ describe('mongo db', function() {
       this.db.query('testcollection', {$query: {}}, null, null, function(err) {
         expect(err).ok();
         expect(err.code).eql(4106);
-        done();
-      });
-    });
-
-    it('unknown query operator error', function(done) {
-      this.db.query('testcollection', {$asdfasdf: {}}, null, null, function(err) {
-        expect(err).ok();
-        expect(err.code).eql(4107);
         done();
       });
     });
@@ -129,18 +124,49 @@ describe('mongo db', function() {
     it('non-object $readPref should return error', function(done) {
       this.db.query('testcollection', {$readPref: true}, null, null, function(err) {
         expect(err).ok();
-        expect(err.code).eql(4111);
+        expect(err.code).eql(4107);
         done();
       });
     });
 
-    it('malformed $mapReduce', function(done) {
+    it('malformed $mapReduce should return error', function(done) {
       this.db.allowJSQueries = true; // required for $mapReduce
       this.db.query('testcollection', {$mapReduce: true}, null, null, function(err) {
         expect(err).ok();
-        expect(err.code).eql(4111);
+        expect(err.code).eql(4107);
         done();
       });
+    });
+
+    describe('queryPollDoc correctly filters on _id', function(done) {
+      var snapshot = {type: 'json0', v: 1, data: {}, id: "test"};
+
+      beforeEach(function(done) {
+        this.db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, done);
+      });
+
+      testCase('filter on id string that matches doc', {_id: 'test'}, true);
+      testCase('filter on id string that doesn\'t match doc', {_id: 'nottest'}, false);
+      testCase('filter on id regexp that matches doc', {_id: /test/}, true);
+      testCase('filter on id regexp that doesn\'t match doc', {_id: /nottest/}, false);
+      testCase('filter on id $in that matches doc', {_id: {$in: ['test']}}, true);
+      testCase('filter on id $in that doesn\'t match doc', {_id: {$in: ['nottest']}}, false);
+
+      function testCase(name, query, expectedHasDoc) {
+        it(name, function(done) {
+          this.db.queryPollDoc(
+            'testcollection',
+            snapshot.id,
+            query,
+            null,
+            function(err, hasDoc) {
+              if (err) done(err);
+              expect(hasDoc).eql(expectedHasDoc);
+              done();
+            }
+          );
+        });
+      };
     });
 
     it('$distinct should perform distinct operation', function(done) {
@@ -265,3 +291,70 @@ describe('mongo db', function() {
     });
   });
 });
+
+describe('mongo db connection', function() {
+  describe('via url string', function() {
+    beforeEach(function(done) {
+      this.db = ShareDbMongo({mongo: mongoUrl});
+
+      // This will enqueue the callback, testing the 'pendingConnect'
+      // logic.
+      this.db.getDbs(function(err, mongo, mongoPoll) {
+        if (err) throw err;
+        mongo.dropDatabase(function(err) {
+          if (err) throw err;
+          done();
+        });
+      });
+    });
+
+    afterEach(function(done) {
+      this.db.close(done);
+    });
+
+    it('commit and query', function(done) {
+      var snapshot = {type: 'json0', v: 1, data: {}, id: "test"};
+      var db = this.db;
+
+      db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, function(err) {
+        if (err) throw err;
+        db.query('testcollection', {}, null, null, function(err, results) {
+          if (err) throw err;
+          expect(results).eql([snapshot]);
+          done();
+        });
+      });
+    });
+  });
+
+  describe('via url string with mongoPoll and pollDelay option', function() {
+    beforeEach(function(done) {
+      this.pollDelay = 1000;
+      this.db = ShareDbMongo({mongo: mongoUrl, mongoPoll: mongoUrl, pollDelay: this.pollDelay});
+      done();
+    });
+
+    afterEach(function(done) {
+      this.db.close(done);
+    });
+
+    it('delays queryPoll but not commit', function(done) {
+      var db = this.db;
+      var pollDelay = this.pollDelay;
+
+      var snapshot = {type: 'json0', v: 1, data: {}, id: "test"};
+      var timeBeforeCommit = new Date;
+      db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, function(err) {
+        expect((new Date) - timeBeforeCommit).lessThan(pollDelay);
+
+        var timeBeforeQuery = new Date;
+        db.queryPoll('testcollection', {}, null, function(err, results) {
+          expect(results.length).eql(1);
+          expect((new Date) - timeBeforeQuery).greaterThan(pollDelay);
+          done();
+        });
+      });
+    });
+  });
+});
+
