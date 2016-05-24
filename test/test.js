@@ -298,36 +298,6 @@ describe('mongo db', function() {
       });
     });
   });
-
-  describe('via url string with mongoPoll and pollDelay option', function() {
-    beforeEach(function(done) {
-      this.pollDelay = 1000;
-      this.db = ShareDbMongo({mongo: mongoUrl, mongoPoll: mongoUrl, pollDelay: this.pollDelay});
-      done();
-    });
-
-    afterEach(function(done) {
-      this.db.close(done);
-    });
-
-    it('delays queryPoll but not commit', function(done) {
-      var db = this.db;
-      var pollDelay = this.pollDelay;
-
-      var snapshot = {type: 'json0', v: 1, data: {}, id: "test"};
-      var timeBeforeCommit = new Date;
-      db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, function(err) {
-        expect((new Date) - timeBeforeCommit).lessThan(pollDelay);
-
-        var timeBeforeQuery = new Date;
-        db.queryPoll('testcollection', {}, null, function(err, results) {
-          expect(results.length).eql(1);
-          expect((new Date) - timeBeforeQuery).greaterThan(pollDelay);
-          done();
-        });
-      });
-    });
-  });
 });
 
 describe('mongo db connection', function() {
@@ -359,6 +329,36 @@ describe('mongo db connection', function() {
         db.query('testcollection', {}, null, null, function(err, results) {
           if (err) throw err;
           expect(results).eql([snapshot]);
+          done();
+        });
+      });
+    });
+  });
+
+  describe('via url string with mongoPoll and pollDelay option', function() {
+    beforeEach(function(done) {
+      this.pollDelay = 1000;
+      this.db = ShareDbMongo({mongo: mongoUrl, mongoPoll: mongoUrl, pollDelay: this.pollDelay});
+      done();
+    });
+
+    afterEach(function(done) {
+      this.db.close(done);
+    });
+
+    it('delays queryPoll but not commit', function(done) {
+      var db = this.db;
+      var pollDelay = this.pollDelay;
+
+      var snapshot = {type: 'json0', v: 1, data: {}, id: "test"};
+      var timeBeforeCommit = new Date;
+      db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, function(err) {
+        expect((new Date) - timeBeforeCommit).lessThan(pollDelay);
+
+        var timeBeforeQuery = new Date;
+        db.queryPoll('testcollection', {}, null, function(err, results) {
+          expect(results.length).eql(1);
+          expect((new Date) - timeBeforeQuery).greaterThan(pollDelay);
           done();
         });
       });
