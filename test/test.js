@@ -359,16 +359,21 @@ describe('mongo db connection', function() {
 });
 
 describe('parse query', function() {
-  var parse = ShareDbMongo.prototype._parseQuery;
+  var parseQuery = ShareDbMongo._parseQuery;
+  var makeQuerySafe = ShareDbMongo._makeQuerySafe;
 
   var needToAddTypeNeNull = function(query) {
     var queryWithTypeNeNull = shallowClone(query);
     queryWithTypeNeNull._type = {$ne: null};
-    expect(parse(query)).eql({query: queryWithTypeNeNull});
+    var parsedQuery = parseQuery(query);
+    makeQuerySafe(parsedQuery);
+    expect(parsedQuery.query).eql(queryWithTypeNeNull);
   };
 
   var queryIsSafeAsIs = function(query) {
-    expect(parse(query)).eql({query: query});
+    var parsedQuery = parseQuery(query);
+    makeQuerySafe(parsedQuery);
+    expect(parsedQuery.query).eql(query);
   };
 
   describe('adds _type: {$ne: null} when necessary', function() {

@@ -635,14 +635,8 @@ ShareDbMongo.prototype._getSnapshotOpLinkBulk = function(collectionName, ids, ca
 // **** Query methods
 
 ShareDbMongo.prototype._query = function(collection, inputQuery, projection, callback) {
-  var err = this.checkQuery(inputQuery);
-  if (err) return callback(err);
-  try {
-    var parsed = this._parseQuery(inputQuery);
-  } catch (err) {
-    err.code = 5104;
-    callback(err);
-  }
+  var parsed = this._getSafeParsedQuery(inputQuery, callback);
+  if (!parsed) return;
 
   // Collection operations such as $aggregate run on the whole
   // collection. Only one operation is run. The result goes in the
@@ -732,16 +726,8 @@ ShareDbMongo.prototype.queryPoll = function(collectionName, inputQuery, options,
 ShareDbMongo.prototype.queryPollDoc = function(collectionName, id, inputQuery, options, callback) {
   var self = this;
   self.getCollectionPoll(collectionName, function(err, collection) {
-    if (err) return callback(err);
-
-    var err = self.checkQuery(inputQuery);
-    if (err) return callback(err);
-    try {
-      var parsed = self._parseQuery(inputQuery);
-    } catch (err) {
-      // XXX should we also print the stack trace?
-      callback({code: 5104, message: err.message});
-    }
+    var parsed = self._getSafeParsedQuery(inputQuery, callback);
+    if (!parsed) return;
 
     // Run the query against a particular mongo document by adding an _id filter
     var queryId = parsed.query._id;
@@ -958,7 +944,28 @@ function ParsedQuery(
   this.cursorOperationValue = cursorOperationValue;
 }
 
-ShareDbMongo.prototype._parseQuery = function(inputQuery) {
+// Parses a query and makes it safe against deleted docs. On error,
+// call the callback and return null.
+ShareDbMongo.prototype._getSafeParsedQuery = function(inputQuery, callback) {
+  var err = this.checkQuery(inputQuery);
+  if (err) {
+    callback(err);
+    return null;
+  }
+
+  try {
+    var parsed = parseQuery(inputQuery);
+  } catch (err) {
+    err.code = 5104;
+    callback(err);
+    return null;
+  }
+
+  makeQuerySafe(parsed);
+  return parsed;
+};
+
+function parseQuery(inputQuery) {
   // Parse sharedb-mongo query format into an object with these keys:
   // * query: The actual mongo query part of the input query
   // * collectionOperationKey, collectionOperationValue: Key and value of the
@@ -1016,13 +1023,6 @@ ShareDbMongo.prototype._parseQuery = function(inputQuery) {
     }
   }
 
-  // Deleted documents are kept around so that we can start their version from
-  // the last version if they get recreated. Lack of a type indicates that a
-  // snapshot is deleted, so don't return any documents with a null type
-  if (deletedDocCouldSatisfyQuery(query)) {
-    query._type = {$ne: null};
-  }
-
   return new ParsedQuery(
     query,
     collectionOperationKey,
@@ -1031,7 +1031,20 @@ ShareDbMongo.prototype._parseQuery = function(inputQuery) {
     cursorOperationKey,
     cursorOperationValue
   );
-}
+};
+ShareDbMongo._parseQuery = parseQuery; // for tests
+
+// Call on a query after it gets parsed to make it safe against
+// matching deleted documents.
+function makeQuerySafe(parsedQuery) {
+  // Deleted documents are kept around so that we can start their version from
+  // the last version if they get recreated. Lack of a type indicates that a
+  // snapshot is deleted, so don't return any documents with a null type
+  if (deletedDocCouldSatisfyQuery(parsedQuery.query)) {
+    parsedQuery.query._type = {$ne: null};
+  }
+};
+ShareDbMongo._makeQuerySafe = makeQuerySafe; // for tests
 
 // Could a deleted doc (one that contains {_type: null} and no other
 // fields) satisfy a query?
