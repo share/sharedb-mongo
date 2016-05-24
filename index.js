@@ -635,9 +635,8 @@ ShareDbMongo.prototype._getSnapshotOpLinkBulk = function(collectionName, ids, ca
 // **** Query methods
 
 ShareDbMongo.prototype._query = function(collection, inputQuery, projection, callback) {
-  var err = this.checkQuery(inputQuery);
-  if (err) return callback(err);
-  var parsed = parseQuery(inputQuery);
+  var parsed = this._getSafeParsedQuery(inputQuery, callback);
+  if (!parsed) return;
 
   // Collection operations such as $aggregate run on the whole
   // collection. Only one operation is run. The result goes in the
@@ -726,12 +725,9 @@ ShareDbMongo.prototype.queryPoll = function(collectionName, inputQuery, options,
 
 ShareDbMongo.prototype.queryPollDoc = function(collectionName, id, inputQuery, options, callback) {
   var self = this;
-  this.getCollectionPoll(collectionName, function(err, collection) {
-    if (err) return callback(err);
-
-    var err = self.checkQuery(inputQuery);
-    if (err) return callback(err);
-    var parsed = parseQuery(inputQuery);
+  self.getCollectionPoll(collectionName, function(err, collection) {
+    var parsed = self._getSafeParsedQuery(inputQuery, callback);
+    if (!parsed) return;
 
     // Run the query against a particular mongo document by adding an _id filter
     var queryId = parsed.query._id;
@@ -948,6 +944,27 @@ function ParsedQuery(
   this.cursorOperationValue = cursorOperationValue;
 }
 
+// Parses a query and makes it safe against deleted docs. On error,
+// call the callback and return null.
+ShareDbMongo.prototype._getSafeParsedQuery = function(inputQuery, callback) {
+  var err = this.checkQuery(inputQuery);
+  if (err) {
+    callback(err);
+    return null;
+  }
+
+  try {
+    var parsed = parseQuery(inputQuery);
+  } catch (err) {
+    err.code = 5104;
+    callback(err);
+    return null;
+  }
+
+  makeQuerySafe(parsed);
+  return parsed;
+};
+
 function parseQuery(inputQuery) {
   // Parse sharedb-mongo query format into an object with these keys:
   // * query: The actual mongo query part of the input query
@@ -1006,11 +1023,6 @@ function parseQuery(inputQuery) {
     }
   }
 
-  // Deleted documents are kept around so that we can start their version from
-  // the last version if they get recreated. Lack of a type indicates that a
-  // snapshot is deleted, so don't return any documents with a null type
-  if (!query._type) query._type = {$ne: null};
-
   return new ParsedQuery(
     query,
     collectionOperationKey,
@@ -1019,6 +1031,148 @@ function parseQuery(inputQuery) {
     cursorOperationKey,
     cursorOperationValue
   );
+};
+ShareDbMongo._parseQuery = parseQuery; // for tests
+
+// Call on a query after it gets parsed to make it safe against
+// matching deleted documents.
+function makeQuerySafe(parsedQuery) {
+  // Deleted documents are kept around so that we can start their version from
+  // the last version if they get recreated. Lack of a type indicates that a
+  // snapshot is deleted, so don't return any documents with a null type
+  if (deletedDocCouldSatisfyQuery(parsedQuery.query)) {
+    parsedQuery.query._type = {$ne: null};
+  }
+};
+ShareDbMongo._makeQuerySafe = makeQuerySafe; // for tests
+
+// Could a deleted doc (one that contains {_type: null} and no other
+// fields) satisfy a query?
+//
+// Return true if it definitely can, or if we're not sure. (This
+// function is used as an optimization to see whether we can avoid
+// augmenting the query to ignore deleted documents)
+function deletedDocCouldSatisfyQuery(query) {
+  // Any query with `{foo: value}` with non-null `value` will never
+  // match deleted documents (that are empty other than the `_type`
+  // field).
+  //
+  // This generalizes to additional classes of queries. Here’s a
+  // recursive description of queries that can't match a deleted doc:
+  // In general, a query with `{foo: X}` can't match a deleted doc
+  // if `X` is guaranteed to not match null or undefined. In addition
+  // to non-null values, the following clauses are guaranteed to not
+  // match null or undefined:
+  //
+  // * `{$in: [A, B, C]}}` where all of A, B, C are non-null.
+  // * `{$ne: null}`
+  // * `{$exists: true}`
+  // * `{$gt: not null}`, `{gte: not null}`, `{$lt: not null}`, `{$lte: nou null}`
+  //
+  // In addition, some queries that have `$and` or `$or` at the
+  // top-level can't match deleted docs:
+  // * `{$and: [A, B, C]}`, where at least one of A, B, C are queries
+  //   guaranteed to not match `{_type: null}`
+  // * `{$or: [A, B, C]}`, where all of A, B, C are queries guaranteed
+  //   to not match `{_type: null}`
+  //
+  // There are more queries that can't match deleted docs but they
+  // aren’t that common, e.g. ones using `$type` or bit-wise
+  // operators.
+  if (query.hasOwnProperty('$and')) {
+    if (Array.isArray(query.$and)) {
+      for (var i = 0; i < query.$and.length; i++) {
+        if (!deletedDocCouldSatisfyQuery(query.$and[i])) {
+          return false;
+        }
+      }
+      return true;
+    } else {
+      // Malformed? Play it safe.
+      return true;
+    }
+  }
+
+  if (query.hasOwnProperty('$or')) {
+    if (Array.isArray(query.$or)) {
+      for (var i = 0; i < query.$or.length; i++) {
+        if (deletedDocCouldSatisfyQuery(query.$or[i])) {
+          return true;
+        }
+      }
+      return false;
+    } else {
+      // Malformed? Play it safe.
+      return true;
+    }
+  }
+
+  for (var prop in query) {
+    // When using top-level operators that we don't understand, play
+    // it safe
+    if (prop[0] === '$') {
+      return true;
+    }
+    if (!couldMatchNull(query[prop])) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function couldMatchNull(clause) {
+  if (
+    typeof clause === 'number' ||
+    typeof clause === 'boolean' ||
+    typeof clause === 'string'
+  ) {
+    return false;
+  } else if (clause === null) {
+    return true;
+  } else if (isPlainObject(clause)) {
+    // Mongo interprets clauses with multiple properties with an
+    // implied 'and' relationship, e.g. {$gt: 3, $lt: 6}. If every
+    // part of the clause could match null then the full clause could
+    // match null.
+    for (var prop in clause) {
+      var value = clause[prop];
+      if (prop === '$in' && Array.isArray(value)) {
+        var partCouldMatchNull = false;
+        for (var i = 0; i < value.length; i++) {
+          if (value[i] === null) {
+            partCouldMatchNull = true;
+            break;
+          }
+        }
+        if (!partCouldMatchNull) {
+          return false;
+        }
+      } else if (prop === '$ne') {
+        if (value === null) {
+          return false;
+        }
+      } else if (prop === '$exists') {
+        if (value) {
+          return false;
+        }
+      } else if (prop === '$gt' || prop === '$gte' || prop === '$lt' || prop === '$lte') {
+        if (value !== null) {
+          return false;
+        }
+      } else {
+        // Not sure what to do with this part of the clause; assume it
+        // could match null.
+      }
+    }
+
+    // All parts of the clause could match null.
+    return true;
+  } else {
+    // Not a POJO, string, number, or boolean. Not sure what it is,
+    // but play it safe.
+    return true;
+  }
 }
 
 function castToDoc(id, snapshot, opLink) {
@@ -1075,6 +1229,15 @@ function shallowClone(object) {
     out[key] = object[key];
   }
   return out;
+}
+
+function isPlainObject(value) {
+  return (
+    typeof value === 'object' && (
+      Object.getPrototypeOf(value) === Object.prototype ||
+      Object.getPrototypeOf(value) === null
+    )
+  );
 }
 
 // Convert a simple map of fields that we want into a mongo projection. This
