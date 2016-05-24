@@ -640,8 +640,8 @@ ShareDbMongo.prototype._query = function(collection, inputQuery, projection, cal
   try {
     var parsed = this._parseQuery(inputQuery);
   } catch (err) {
-    // XXX should we also print the stack trace?
-    callback({code: 5104, message: err.message});
+    err.code = 5104;
+    callback(err);
   }
 
   // Collection operations such as $aggregate run on the whole
@@ -1054,10 +1054,7 @@ function deletedDocCouldSatisfyQuery(query) {
   // * `{$in: [A, B, C]}}` where all of A, B, C are non-null.
   // * `{$ne: null}`
   // * `{$exists: true}`
-  // * `{$and: [A, B, C]}` where at least one of A, B, C is guaranteed to
-  //    not match null
-  // * `{$or: [A, B, C]}` where all of A, B, C are guaranteed to not match null
-  // * `{$gt: ...}`, `{gte: ...}`, `{$lt: ...}`, `{$lte: ...}`
+  // * `{$gt: not null}`, `{gte: not null}`, `{$lt: not null}`, `{$lte: nou null}`
   //
   // In addition, some queries that have `$and` or `$or` at the
   // top-level can't match deleted docs:
@@ -1100,33 +1097,37 @@ function deletedDocCouldSatisfyQuery(query) {
   for (var prop in query) {
     // When using top-level operators that we don't understand, play
     // it safe
-    if (prop[0] === '$')
+    if (prop[0] === '$') {
       return true;
-
-    if (!couldMatchNull(query[prop]))
+    }
+    if (!couldMatchNull(query[prop])) {
       return false;
+    }
   }
 
   return true;
 }
 
 function couldMatchNull(clause) {
-  if (typeof clause === "number" ||
-      typeof clause === "boolean" ||
-      typeof clause === "string") {
+  if (
+    typeof clause === 'number' ||
+    typeof clause === 'boolean' ||
+    typeof clause === 'string'
+  ) {
     return false;
   } else if (clause === null) {
     return true;
-  } else if (isPojo(clause)) {
+  } else if (isPlainObject(clause)) {
     // Mongo interprets clauses with multiple properties with an
     // implied 'and' relationship, e.g. {$gt: 3, $lt: 6}. If every
     // part of the clause could match null then the full clause could
     // match null.
     for (var prop in clause) {
-      if (prop === '$in' && Array.isArray(clause.$in)) {
+      var value = clause[prop];
+      if (prop === '$in' && Array.isArray(value)) {
         var partCouldMatchNull = false;
-        for (var i = 0; i < clause.$in.length; i++) {
-          if (clause.$in[i] === null) {
+        for (var i = 0; i < value.length; i++) {
+          if (value[i] === null) {
             partCouldMatchNull = true;
             break;
           }
@@ -1135,32 +1136,15 @@ function couldMatchNull(clause) {
           return false;
         }
       } else if (prop === '$ne') {
-        if (clause.$ne === null) {
+        if (value === null) {
           return false;
         }
       } else if (prop === '$exists') {
-        if (clause.$exists) {
-          return false;
-        }
-      } else if (prop === '$and' && Array.isArray(clause.$and)) {
-        for (var i = 0; i < clause.$and.length; i++) {
-          if (!couldMatchNull(clause.$and[i])) {
-            return false;
-          }
-        }
-      } else if (prop === '$or' && Array.isArray(clause.$or)) {
-        var partCouldMatchNull = false;
-        for (var i = 0; i < clause.$or.length; i++) {
-          if (couldMatchNull(clause.$or[i])) {
-            partCouldMatchNull = true;
-            break;
-          }
-        }
-        if (!partCouldMatchNull) {
+        if (value) {
           return false;
         }
       } else if (prop === '$gt' || prop === '$gte' || prop === '$lt' || prop === '$lte') {
-        if (clause[prop] !== null) {
+        if (value !== null) {
           return false;
         }
       } else {
@@ -1234,10 +1218,13 @@ function shallowClone(object) {
   return out;
 }
 
-function isPojo(x) {
-  return (typeof x === "object" &&
-          (Object.getPrototypeOf(x) === Object.prototype ||
-           Object.getPrototypeOf(x) === null));
+function isPlainObject(value) {
+  return (
+    typeof value === 'object' && (
+      Object.getPrototypeOf(value) === Object.prototype ||
+      Object.getPrototypeOf(value) === null
+    )
+  );
 }
 
 // Convert a simple map of fields that we want into a mongo projection. This

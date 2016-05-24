@@ -411,18 +411,6 @@ describe('parse query', function() {
       queryIsSafeAsIs({foo: {$in: [null, 2, 3]}, bar: 1});
     })
 
-    it('field-level $and', function() {
-      queryIsSafeAsIs({foo: {$and: [{$gt: 1}, {$ne: null}]}});
-      queryIsSafeAsIs({foo: {$and: [{$ne: 1}, {$ne: null}]}});
-      needToAddTypeNeNull({foo: {$and: [{$ne: 1}, {$ne: 2}]}});
-    });
-
-    it('field-level $or', function() {
-      queryIsSafeAsIs({foo: {$or: [{$gt: 1}, {$ne: null}]}});
-      needToAddTypeNeNull({foo: {$or: [{$ne: 1}, {$ne: null}]}});
-      needToAddTypeNeNull({foo: {$or: [{$ne: 1}, {$ne: 2}]}});
-    });
-
     it('top-level $and', function() {
       queryIsSafeAsIs({$and: [{foo: {$ne: null}}, {bar: {$ne: null}}]});
       queryIsSafeAsIs({$and: [{foo: {$ne: 1}}, {bar: {$ne: null}}]});
