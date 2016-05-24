@@ -1,6 +1,7 @@
 var expect = require('expect.js');
 var mongodb = require('mongodb');
 var ShareDbMongo = require('../index');
+var makeSortedQuery = require('sharedb-mingo-memory/make-sorted-query');
 
 var mongoUrl = process.env.TEST_MONGO_URL || 'mongodb://localhost:27017/test';
 
@@ -15,7 +16,7 @@ function create(callback) {
   });
 }
 
-require('sharedb/test/db')(create);
+require('sharedb/test/db')(create, makeSortedQuery);
 
 describe('mongo db', function() {
   beforeEach(function(done) {
@@ -77,6 +78,71 @@ describe('mongo db', function() {
       });
     });
 
+    it('$query is deprecated', function(done) {
+      this.db.query('testcollection', {$query: {}}, null, null, function(err) {
+        expect(err).ok();
+        expect(err.code).eql(4106);
+        done();
+      });
+    });
+
+    it('unknown query operator error', function(done) {
+      this.db.query('testcollection', {$asdfasdf: {}}, null, null, function(err) {
+        expect(err).ok();
+        expect(err.code).eql(4107);
+        done();
+      });
+    });
+
+    it('only one collection operation allowed', function(done) {
+      this.db.query('testcollection', {$distinct: {y: 1}, $aggregate: {}}, null, null, function(err) {
+        expect(err).ok();
+        expect(err.code).eql(4108);
+        done();
+      });
+    });
+
+    it('only one cursor operation allowed', function(done) {
+      this.db.query('testcollection', {$count: true, $explain: true}, null, null, function(err) {
+        expect(err).ok();
+        expect(err.code).eql(4109);
+        done();
+      });
+    });
+
+    it('cursor transform can\'t run after collection operation', function(done) {
+      this.db.query('testcollection', {$distinct: {y: 1}, $sort: {y: 1}}, null, null, function(err) {
+        expect(err).ok();
+        expect(err.code).eql(4110);
+        done();
+      });
+    });
+
+    it('cursor operation can\'t run after collection operation', function(done) {
+      this.db.query('testcollection', {$distinct: {y: 1}, $count: true}, null, null, function(err) {
+        expect(err).ok();
+        expect(err.code).eql(4110);
+        done();
+      });
+    });
+
+    it('non-object $readPref should return error', function(done) {
+      this.db.query('testcollection', {$readPref: true}, null, null, function(err) {
+        expect(err).ok();
+        expect(err.code).eql(4111);
+        done();
+      });
+    });
+
+    it('malformed $mapReduce', function(done) {
+      this.db.allowJSQueries = true; // required for $mapReduce
+      this.db.query('testcollection', {$mapReduce: true}, null, null, function(err) {
+        expect(err).ok();
+        expect(err.code).eql(4111);
+        done();
+      });
+    });
+
     it('$distinct should perform distinct operation', function(done) {
       var snapshots = [
         {type: 'json0', v: 1, data: {x: 1, y: 1}},
@@ -87,7 +153,7 @@ describe('mongo db', function() {
       db.commit('testcollection', 'test1', {v: 0, create: {}}, snapshots[0], function(err) {
         db.commit('testcollection', 'test2', {v: 0, create: {}}, snapshots[1], function(err) {
           db.commit('testcollection', 'test3', {v: 0, create: {}}, snapshots[2], function(err) {
-            var query = {$distinct: true, $field: 'y', $query: {}};
+            var query = {$distinct: {field: 'y'}};
             db.query('testcollection', query, null, null, function(err, results, extra) {
               if (err) throw err;
               expect(extra).eql([1, 2]);
@@ -145,16 +211,16 @@ describe('mongo db', function() {
         db.commit('testcollection', 'test2', {v: 0, create: {}}, snapshots[1], function(err) {
           db.commit('testcollection', 'test3', {v: 0, create: {}}, snapshots[2], function(err) {
             var query = {
-              $mapReduce: true,
-              $map: function() {
-                emit(this.player, this.score);
-              },
-              $reduce: function(key, values) {
-                return values.reduce(function(t, s) {
-                  return t + s;
-                });
-              },
-              $query: {}
+              $mapReduce: {
+                map: function() {
+                  emit(this.player, this.score);
+                },
+                reduce: function(key, values) {
+                  return values.reduce(function(t, s) {
+                    return t + s;
+                  });
+                }
+              }
             };
             db.query('testcollection', query, null, null, function(err) {
               expect(err).ok();
@@ -177,16 +243,16 @@ describe('mongo db', function() {
         db.commit('testcollection', 'test2', {v: 0, create: {}}, snapshots[1], function(err) {
           db.commit('testcollection', 'test3', {v: 0, create: {}}, snapshots[2], function(err) {
             var query = {
-              $mapReduce: true,
-              $map: function() {
-                emit(this.player, this.score);
-              },
-              $reduce: function(key, values) {
-                return values.reduce(function(t, s) {
-                  return t + s;
-                });
-              },
-              $query: {}
+              $mapReduce: {
+                map: function() {
+                  emit(this.player, this.score);
+                },
+                reduce: function(key, values) {
+                  return values.reduce(function(t, s) {
+                    return t + s;
+                  });
+                }
+              }
             };
             db.query('testcollection', query, null, null, function(err, results, extra) {
               if (err) throw err;

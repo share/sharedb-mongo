@@ -55,6 +55,12 @@ Mongo errors are passed back directly. Additional error codes:
 * 4103 -- $where queries disabled
 * 4104 -- $mapReduce queries disabled
 * 4105 -- $aggregate queries disabled
+* 4106 -- $query property deprecated in queries
+* 4107 -- Unknown query operator
+* 4108 -- Only one collection operation allowed
+* 4109 -- Only one cursor operation allowed
+* 4110 -- Cursor methods can't run after collection method
+* 4111 -- Malformed query operator
 
 #### 5100 -- Internal error - DB
 

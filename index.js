@@ -253,7 +253,7 @@ ShareDbMongo.prototype.getSnapshot = function(collectionName, id, fields, callba
     if (err) return callback(err);
     var query = {_id: id};
     var projection = getProjection(fields);
-    collection.findOne(query, projection, function(err, doc) {
+    collection.find(query).limit(1).project(projection).next(function(err, doc) {
       if (err) return callback(err);
       var snapshot = (doc) ? castToSnapshot(doc) : new MongoSnapshot(id, 0, null, undefined);
       callback(null, snapshot);
@@ -266,7 +266,7 @@ ShareDbMongo.prototype.getSnapshotBulk = function(collectionName, ids, fields, c
     if (err) return callback(err);
     var query = {_id: {$in: ids}};
     var projection = getProjection(fields);
-    collection.find(query, projection).toArray(function(err, docs) {
+    collection.find(query).project(projection).toArray(function(err, docs) {
       if (err) return callback(err);
       var snapshotMap = {};
       for (var i = 0; i < docs.length; i++) {
@@ -424,18 +424,16 @@ DB.prototype.getCommittedOpVersion = function(collectionName, id, snapshot, op, 
   this.getOpCollection(collectionName, function(err, opCollection) {
     if (err) return callback(err);
     var query = {
-      $query: {
-        src: op.src,
-        seq: op.seq
-      },
-      $orderby: {v: 1}
+      src: op.src,
+      seq: op.seq
     };
     var projection = {v: 1, _id: 0};
+    var sort = {v: 1};
     // Find the earliest version at which the op may have been committed.
     // Since ops are optimistically written prior to writing the snapshot, the
     // op could end up being written multiple times or have been written but
     // not count as committed if not backreferenced from the snapshot
-    opCollection.findOne(query, projection, function(err, doc) {
+    opCollection.find(query).project(projection).sort(sort).limit(1).next(function(err, doc) {
       if (err) return callback(err);
       // If we find no op with the same src and seq, we definitely don't have
       // any match. This should prevent us from accidentally querying a huge
@@ -569,7 +567,8 @@ ShareDbMongo.prototype._getOps = function(collectionName, id, from, callback) {
     // Also exclude the `m` field, which can be used to store metadata on ops
     // for tracking purposes
     var projection = {d: 0, m: 0};
-    opCollection.find(query, projection).sort({v: 1}).toArray(callback);
+    var sort = {v: 1};
+    opCollection.find(query).project(projection).sort(sort).toArray(callback);
   });
 };
 
@@ -580,7 +579,7 @@ ShareDbMongo.prototype._getOpsBulk = function(collectionName, conditions, callba
     // Exclude the `m` field, which can be used to store metadata on ops for
     // tracking purposes
     var projection = {m: 0};
-    var stream = opCollection.find(query, projection).stream();
+    var stream = opCollection.find(query).project(projection).stream();
     readOpsBulk(stream, callback);
   });
 };
@@ -619,7 +618,7 @@ ShareDbMongo.prototype._getSnapshotOpLink = function(collectionName, id, callbac
     if (err) return callback(err);
     var query = {_id: id};
     var projection = {_id: 0, _o: 1, _v: 1};
-    collection.findOne(query, projection, callback);
+    collection.find(query).limit(1).project(projection).next(callback);
   });
 };
 
@@ -628,7 +627,7 @@ ShareDbMongo.prototype._getSnapshotOpLinkBulk = function(collectionName, ids, ca
     if (err) return callback(err);
     var query = {_id: {$in: ids}};
     var projection = {_o: 1, _v: 1};
-    collection.find(query, projection).toArray(callback);
+    collection.find(query).project(projection).toArray(callback);
   });
 };
 
@@ -636,48 +635,60 @@ ShareDbMongo.prototype._getSnapshotOpLinkBulk = function(collectionName, ids, ca
 // **** Query methods
 
 ShareDbMongo.prototype._query = function(collection, inputQuery, projection, callback) {
-  var query = normalizeQuery(inputQuery);
-  var err = this.checkQuery(query);
+  var err = this.checkQuery(inputQuery);
   if (err) return callback(err);
+  var parsed = parseQuery(inputQuery);
 
-  if (query.$count) {
-    collection.count(query.$query || {}, function(err, extra) {
-      if (err) return callback(err);
-      callback(null, [], extra);
-    });
+  // Collection operations such as $aggregate run on the whole
+  // collection. Only one operation is run. The result goes in the
+  // "extra" argument in the callback.
+  if (parsed.collectionOperationKey) {
+    collectionOperationsMap[parsed.collectionOperationKey](
+      collection,
+      parsed.query,
+      parsed.collectionOperationValue,
+      function(err, extra) {
+        if (err) return callback(err);
+        callback(null, [], extra);
+      }
+    );
     return;
   }
 
-  if (query.$distinct) {
-    collection.distinct(query.$field, query.$query || {}, function(err, extra) {
-      if (err) return callback(err);
-      callback(null, [], extra);
-    });
+  // No collection operations were used. Create an initial cursor for
+  // the query, that can be transformed later.
+  var cursor = collection.find(parsed.query).project(projection);
+
+  // Cursor transforms such as $skip transform the cursor into a new
+  // one. If multiple transforms are specified on inputQuery, they all
+  // run.
+  for (var key in parsed.cursorTransforms) {
+    var transform = cursorTransformsMap[key];
+    cursor = transform(cursor, parsed.cursorTransforms[key]);
+    if (!cursor) {
+      return callback({code: 4111, message: "Malformed query operator"});
+    }
+  }
+
+  // Cursor operations such as $count run on the cursor, after all
+  // transforms. Only one operation is run. The result goes in the
+  // "extra" argument in the callback.
+  if (parsed.cursorOperationKey) {
+    cursorOperationsMap[parsed.cursorOperationKey](
+      cursor,
+      parsed.cursorOperationValue,
+      function(err, extra) {
+        if (err) return callback(err);
+        callback(null, [], extra);
+      }
+    );
     return;
   }
 
-  if (query.$aggregate) {
-    collection.aggregate(query.$aggregate, function(err, extra) {
-      if (err) return callback(err);
-      callback(null, [], extra);
-    });
-    return;
-  }
-
-  if (query.$mapReduce) {
-    var mapReduceOptions = {
-      query: query.$query || {},
-      out: {inline: 1},
-      scope: query.$scope || {}
-    };
-    collection.mapReduce(query.$map, query.$reduce, mapReduceOptions, function(err, extra) {
-      if (err) return callback(err);
-      callback(null, [], extra);
-    });
-    return;
-  }
-
-  collection.find(query, projection, query.$findOptions).toArray(callback);
+  // If no collection operation or cursor operations were used, return
+  // an array of snapshots that are passed in the "results" argument
+  // in the callback
+  cursor.toArray(callback);
 };
 
 ShareDbMongo.prototype.query = function(collectionName, inputQuery, fields, options, callback) {
@@ -718,12 +729,12 @@ ShareDbMongo.prototype.queryPollDoc = function(collectionName, id, inputQuery, o
   this.getCollectionPoll(collectionName, function(err, collection) {
     if (err) return callback(err);
 
-    var query = normalizeQuery(inputQuery);
-    var err = self.checkQuery(query);
+    var err = self.checkQuery(inputQuery);
     if (err) return callback(err);
+    var parsed = parseQuery(inputQuery);
 
     // Run the query against a particular mongo document by adding an _id filter
-    var queryId = query.$query._id;
+    var queryId = parsed.query._id;
     if (queryId && typeof queryId === 'object') {
       // Check if the query contains the id directly in the common pattern of
       // a query for a specific list of ids, such as {_id: {$in: [1, 2, 3]}}
@@ -731,28 +742,28 @@ ShareDbMongo.prototype.queryPollDoc = function(collectionName, id, inputQuery, o
         if (queryId.$in.indexOf(id) === -1) {
           // If the id isn't in the list of ids, then there is no way this
           // can be a match
-          return callback();
+          return callback(null, false);
         } else {
           // If the id is in the list, then it is equivalent to restrict to our
           // particular id and override the current value
-          query.$query._id = id;
+          parsed.query.query._id = id;
         }
       } else {
-        delete query.$query._id;
-        query.$query.$and = (query.$query.$and) ?
-          query.$query.$and.concat({_id: id}, {_id: queryId}) :
+        delete parsed.query._id;
+        parsed.query.$and = (parsed.query.$and) ?
+          parsed.query.$and.concat({_id: id}, {_id: queryId}) :
           [{_id: id}, {_id: queryId}];
       }
     } else if (queryId && queryId !== id) {
       // If queryId is a primative value such as a string or number and it
       // isn't equal to the id, then there is no way this can be a match
-      return callback();
+      return callback(null, false);
     } else {
       // Restrict the query to this particular document
-      query.$query._id = id;
+      parsed.query._id = id;
     }
 
-    collection.findOne(query, {_id: 1}, function(err, doc) {
+    collection.find(parsed.query).limit(1).project({_id: 1}).next(function(err, doc) {
       callback(err, !!doc);
     });
   });
@@ -763,12 +774,26 @@ ShareDbMongo.prototype.queryPollDoc = function(collectionName, id, inputQuery, o
 
 // Can we poll by checking the query limited to the particular doc only?
 ShareDbMongo.prototype.canPollDoc = function(collectionName, query) {
-  return !(
+  for (var operation in collectionOperationsMap) {
+    if (query.hasOwnProperty(operation)) return false;
+  }
+  for (var operation in cursorOperationsMap) {
+    if (query.hasOwnProperty(operation)) return false;
+  }
+
+  if (
+    query.hasOwnProperty('$sort') ||
     query.hasOwnProperty('$orderby') ||
     query.hasOwnProperty('$limit') ||
     query.hasOwnProperty('$skip') ||
-    query.hasOwnProperty('$count')
-  );
+    query.hasOwnProperty('$max') ||
+    query.hasOwnProperty('$min') ||
+    query.hasOwnProperty('$returnKey')
+  ) {
+    return false;
+  }
+
+  return true;
 };
 
 // Return true to avoid polling if there is no possibility that an op could
@@ -778,14 +803,25 @@ ShareDbMongo.prototype.skipPoll = function(collectionName, id, op, query) {
   // should be able to assume that the op is structured validly
   if (op.create || op.del) return false;
   if (!op.op) return true;
+
+  // Right now, always re-poll if using a collection operation such as
+  // $distinct or a cursor operation such as $count. This could be
+  // optimized further in some cases.
+  for (var operation in collectionOperationsMap) {
+    if (query.hasOwnProperty(operation)) return false;
+  }
+  for (var operation in cursorOperationsMap) {
+    if (query.hasOwnProperty(operation)) return false;
+  }
+
   var fields = getFields(query);
   return !opContainsAnyField(op.op, fields);
 };
 
 function getFields(query) {
   var fields = {};
-  getInnerFields(query.$query, fields);
   getInnerFields(query.$orderby, fields);
+  getInnerFields(query.$sort, fields);
   getInnerFields(query, fields);
   return fields;
 }
@@ -821,11 +857,17 @@ function opContainsAnyField(op, fields) {
 
 // Utility methods
 
-// Return error string on error. Query should already be normalized with
-// normalizeQuery below.
+// Return {code: ..., message: ...}  on error. Call before parseQuery.
 ShareDbMongo.prototype.checkQuery = function(query) {
+  if (query.$query) {
+    return {code: 4106, message: '$query property deprecated in queries'};
+  }
+
+  var validMongoErr = checkValidMongo(query);
+  if (validMongoErr) return validMongoErr;
+
   if (!this.allowJSQueries) {
-    if (query.$query.$where != null) {
+    if (query.$where != null) {
       return {code: 4103, message: '$where queries disabled'};
     }
     if (query.$mapReduce != null) {
@@ -838,31 +880,147 @@ ShareDbMongo.prototype.checkQuery = function(query) {
   }
 };
 
-function normalizeQuery(inputQuery) {
-  // Box queries inside of a $query and clone so that we know where to look
-  // for selctors and can modify them without affecting the original object
-  var query;
-  if (inputQuery.$query) {
-    query = shallowClone(inputQuery);
-    query.$query = shallowClone(query.$query);
-  } else {
-    query = {$query: {}};
-    for (var key in inputQuery) {
-      if (metaOperators[key]) {
-        query[key] = inputQuery[key];
-      } else if (cursorOperators[key]) {
-        var findOptions = query.$findOptions || (query.$findOptions = {});
-        findOptions[cursorOperators[key]] = inputQuery[key];
+// Check that any keys starting with $ are valid Mongo methods. Verify
+// that:
+// * There is at most one collection operation like $mapReduce
+// * If there is a collection operation then there are no cursor methods
+// * There is at most one cursor operation like $count
+//
+// Return {code: ..., message: ...} on error.
+function checkValidMongo(query) {
+  var collectionOperationKey = null; // only one allowed
+  var foundCursorMethod = false; // transform or operation
+  var cursorOperationKey = null; // only one allowed
+
+  for (var key in query) {
+    if (key[0] === '$') {
+      if (collectionOperationsMap[key]) {
+        // Found collection operation. Check that it's unique.
+
+        if (collectionOperationKey) {
+          return {
+            code: 4108,
+            message: 'Only one collection operation allowed. ' +
+              'Found ' + collectionOperationKey + ' and ' + key
+          }
+        }
+        collectionOperationKey = key;
+      } else if (cursorOperationsMap[key]) {
+        if (cursorOperationKey) {
+          return {
+            code: 4109,
+            message: 'Only one cursor operation allowed. ' +
+              'Found ' + cursorOperationKey + ' and ' + key
+          }
+        }
+        cursorOperationKey = key;
+        foundCursorMethod = true;
+      } else if (cursorTransformsMap[key]) {
+        foundCursorMethod = true;
       } else {
-        query.$query[key] = inputQuery[key];
+        return {code: 4107, message: 'Unknown query operator: ' + key};
       }
     }
   }
+
+  if (collectionOperationKey && foundCursorMethod) {
+    return {
+      code: 4110,
+      message: 'Cursor methods can\'t run after collection method ' +
+        collectionOperationKey
+    };
+  }
+
+  return null;
+}
+
+function ParsedQuery(
+  query,
+  collectionOperationKey,
+  collectionOperationValue,
+  cursorTransforms,
+  cursorOperationKey,
+  cursorOperationValue
+) {
+  this.query = query;
+  this.collectionOperationKey = collectionOperationKey;
+  this.collectionOperationValue = collectionOperationValue;
+  this.cursorTransforms = cursorTransforms;
+  this.cursorOperationKey = cursorOperationKey;
+  this.cursorOperationValue = cursorOperationValue;
+}
+
+function parseQuery(inputQuery) {
+  // Parse sharedb-mongo query format into an object with these keys:
+  // * query: The actual mongo query part of the input query
+  // * collectionOperationKey, collectionOperationValue: Key and value of the
+  //   single collection operation (eg $mapReduce) defined in the input query,
+  //   or null
+  // * cursorTransforms: Map of all the cursor transforms in the input query
+  //   (eg $sort)
+  // * cursorOperationKey, cursorOperationValue: Key and value of the single
+  //   cursor operation (eg $count) defined in the input query, or null
+  //
+  // Examples:
+  //
+  // parseQuery({foo: {$ne: 'bar'}, $distinct: {field: 'x'}}) ->
+  // {
+  //   query: {foo: {$ne: 'bar'}},
+  //   collectionOperationKey: '$distinct',
+  //   collectionOperationValue: {field: 'x'},
+  //   cursorTransforms: {},
+  //   cursorOperationKey: null,
+  //   cursorOperationValue: null
+  // }
+  //
+  // parseQuery({foo: 'bar', $limit: 2, $count: true}) ->
+  // {
+  //   query: {foo: 'bar'},
+  //   collectionOperationKey: null,
+  //   collectionOperationValue: null
+  //   cursorTransforms: {$limit: 2},
+  //   cursorOperationKey: '$count',
+  //   cursorOperationValue: 2
+  // }
+
+  var query = {};
+  var collectionOperationKey = null;
+  var collectionOperationValue = null;
+  var cursorTransforms = {};
+  var cursorOperationKey = null;
+  var cursorOperationValue = null;
+
+  if (inputQuery.$query) {
+    throw new Error("unexpected $query: should have called checkQuery");
+  } else {
+    for (var key in inputQuery) {
+      if (collectionOperationsMap[key]) {
+        collectionOperationKey = key;
+        collectionOperationValue = inputQuery[key];
+      } else if (cursorTransformsMap[key]) {
+        cursorTransforms[key] = inputQuery[key];
+      } else if (cursorOperationsMap[key]) {
+        cursorOperationKey = key;
+        cursorOperationValue = inputQuery[key];
+      } else {
+        query[key] = inputQuery[key];
+      }
+    }
+  }
+
   // Deleted documents are kept around so that we can start their version from
   // the last version if they get recreated. Lack of a type indicates that a
   // snapshot is deleted, so don't return any documents with a null type
-  if (!query.$query._type) query.$query._type = {$ne: null};
-  return query;
+  if (!query._type) query._type = {$ne: null};
+
+  return new ParsedQuery(
+    query,
+    collectionOperationKey,
+    collectionOperationValue,
+    cursorTransforms,
+    cursorOperationKey,
+    cursorOperationValue
+  );
 }
 
 function castToDoc(id, snapshot, opLink) {
@@ -941,22 +1099,84 @@ function getProjection(fields) {
   return projection;
 }
 
-var metaOperators = {
-  $comment: true
-, $explain: true
-, $hint: true
-, $maxScan: true
-, $max: true
-, $min: true
-, $orderby: true
-, $returnKey: true
-, $showDiskLoc: true
-, $snapshot: true
-, $count: true
-, $aggregate: true
+var collectionOperationsMap = {
+  '$distinct': function(collection, query, value, cb) {
+    collection.distinct(value.field, query, cb);
+  },
+  '$aggregate': function(collection, query, value, cb) {
+    collection.aggregate(value, cb);
+  },
+  '$mapReduce': function(collection, query, value, cb) {
+    if (typeof value !== 'object') {
+      return cb({code: 4111, message: 'Malformed query operator: $mapReduce'});
+    }
+    var mapReduceOptions = {
+      query: query,
+      out: {inline: 1},
+      scope: value.scope || {}
+    };
+    collection.mapReduce(
+      value.map, value.reduce, mapReduceOptions, cb);
+  }
 };
 
-var cursorOperators = {
-  $limit: 'limit'
-, $skip: 'skip'
+var cursorOperationsMap = {
+  '$count': function(cursor, value, cb) {
+    cursor.count(cb);
+  },
+  '$explain': function(cursor, verbosity, cb) {
+    cursor.explain(verbosity, cb);
+  },
+  '$map': function(cursor, fn, cb) {
+    cursor.map(fn, cb);
+  }
+};
+
+var cursorTransformsMap = {
+  '$batchSize': function(cursor, size) { return cursor.batchSize(size); },
+  '$comment': function(cursor, text) { return cursor.comment(text); },
+  '$hint': function(cursor, index) { return cursor.hint(index); },
+  '$max': function(cursor, value) { return cursor.max(value); },
+  '$maxScan': function(cursor, value) { return cursor.maxScan(value); },
+  '$maxTimeMS': function(cursor, milliseconds) {
+    return cursor.maxTimeMS(milliseconds);
+  },
+  '$min': function(cursor, value) { return cursor.min(value); },
+  '$noCursorTimeout': function(cursor) {
+    // no argument to cursor method
+    return cursor.noCursorTimeout();
+  },
+  '$orderby': function(cursor, value) {
+    console.warn('Deprecated: $orderby; Use $sort.');
+    return cursor.sort(value);
+  },
+  '$readConcern': function(cursor, level) {
+    return cursor.readConcern(level);
+  },
+  '$readPref': function(cursor, value) {
+    // The Mongo driver cursor method takes two argments. Our queries
+    // have a single value for the '$readPref' property. Interpret as
+    // an object with {mode, tagSet}.
+    if (typeof value !== 'object') return null;
+    return cursor.readPref(value.mode, value.tagSet);
+  },
+  '$returnKey': function(cursor) {
+    // no argument to cursor method
+    return cursor.returnKey();
+  },
+  '$snapshot': function(cursor) {
+    // no argument to cursor method
+    return cursor.snapshot();
+  },
+  '$sort': function(cursor, value) { return cursor.sort(value); },
+  '$skip': function(cursor, value) { return cursor.skip(value); },
+  '$limit': function(cursor, value) { return cursor.limit(value); },
+  '$showDiskLoc': function(cursor, value) {
+    console.warn('Deprecated: $showDiskLoc; Use $showRecordId.');
+    return cursor.showRecordId(value);
+  },
+  '$showRecordId': function(cursor) {
+    // no argument to cursor method
+    return cursor.showRecordId();
+  }
 };
