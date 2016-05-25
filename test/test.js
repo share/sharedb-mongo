@@ -6,15 +6,17 @@ var getQuery = require('sharedb-mingo-memory/get-query');
 var mongoUrl = process.env.TEST_MONGO_URL || 'mongodb://localhost:27017/test';
 
 function create(callback) {
-  mongodb.connect(mongoUrl, function(err, mongo) {
-    if (err) throw err;
-    mongo.dropDatabase(function(err) {
+  var db = ShareDbMongo({mongo: function(shareDbCallback) {
+    mongodb.connect(mongoUrl, function(err, mongo) {
       if (err) throw err;
-      var db = ShareDbMongo({mongo: mongo});
-      callback(null, db, mongo);
+      mongo.dropDatabase(function(err) {
+        if (err) throw err;
+        shareDbCallback(null, mongo);
+        callback(null, db, mongo);
+      });
     });
-  });
-}
+  }});
+};
 
 require('sharedb/test/db')({create: create, getQuery: getQuery});
 
