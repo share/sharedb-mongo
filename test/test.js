@@ -145,14 +145,14 @@ describe('mongo db', function() {
         this.db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, done);
       });
 
-      testCase('filter on id string that matches doc', {_id: 'test'}, true);
-      testCase('filter on id string that doesn\'t match doc', {_id: 'nottest'}, false);
-      testCase('filter on id regexp that matches doc', {_id: /test/}, true);
-      testCase('filter on id regexp that doesn\'t match doc', {_id: /nottest/}, false);
-      testCase('filter on id $in that matches doc', {_id: {$in: ['test']}}, true);
-      testCase('filter on id $in that doesn\'t match doc', {_id: {$in: ['nottest']}}, false);
+      test('filter on id string that matches doc', {_id: 'test'}, true);
+      test('filter on id string that doesn\'t match doc', {_id: 'nottest'}, false);
+      test('filter on id regexp that matches doc', {_id: /test/}, true);
+      test('filter on id regexp that doesn\'t match doc', {_id: /nottest/}, false);
+      test('filter on id $in that matches doc', {_id: {$in: ['test']}}, true);
+      test('filter on id $in that doesn\'t match doc', {_id: {$in: ['nottest']}}, false);
 
-      function testCase(name, query, expectedHasDoc) {
+      function test(name, query, expectedHasDoc) {
         it(name, function(done) {
           this.db.queryPollDoc(
             'testcollection',
