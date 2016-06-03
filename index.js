@@ -55,9 +55,7 @@ function ShareDbMongo(mongo, options) {
     this.pendingConnect = [];
     this._connect(mongo, options);
   } else {
-    this.mongo = mongo;
-    this.mongoPoll = options.mongoPoll;
-    this.pendingConnect = null;
+    throw new Error('deprecated: pass mongo as url string or function with callback');
   }
 };
 
