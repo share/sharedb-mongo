@@ -145,27 +145,39 @@ describe('mongo db', function() {
         this.db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, done);
       });
 
-      test('filter on id string that matches doc', {_id: 'test'}, true);
-      test('filter on id string that doesn\'t match doc', {_id: 'nottest'}, false);
-      test('filter on id regexp that matches doc', {_id: /test/}, true);
-      test('filter on id regexp that doesn\'t match doc', {_id: /nottest/}, false);
-      test('filter on id $in that matches doc', {_id: {$in: ['test']}}, true);
-      test('filter on id $in that doesn\'t match doc', {_id: {$in: ['nottest']}}, false);
+      it('filter on id string that matches doc', function(done) {
+        test.bind(this)({_id: 'test'}, true, done);
+      });
+      it('filter on id string that doesn\'t match doc', function(done) {
+        test.bind(this)({_id: 'nottest'}, false, done);
+      });
+      it('filter on id regexp that matches doc', function(done) {
+        test.bind(this)({_id: /test/}, true, done);
+      });
+      it('filter on id regexp that doesn\'t match doc', function(done) {
+        test.bind(this)({_id: /nottest/}, false, done);
+      });
+      it('filter on id $in that matches doc', function(done) {
+        test.bind(this)({_id: {$in: ['test']}}, true, done);
+      });
+      it('filter on id $in that doesn\'t match doc', function(done) {
+        test.bind(this)({_id: {$in: ['nottest']}}, false, done);
+      });
 
-      function test(name, query, expectedHasDoc) {
-        it(name, function(done) {
-          this.db.queryPollDoc(
-            'testcollection',
-            snapshot.id,
-            query,
-            null,
-            function(err, hasDoc) {
-              if (err) done(err);
-              expect(hasDoc).eql(expectedHasDoc);
-              done();
-            }
-          );
-        });
+      // Intentionally inline calls to 'it' rather than place them
+      // inside 'test' so that you can use Mocha's 'skip' or 'only'
+      function test(query, expectedHasDoc, done) {
+        this.db.queryPollDoc(
+          'testcollection',
+          snapshot.id,
+          query,
+          null,
+          function(err, hasDoc) {
+            if (err) done(err);
+            expect(hasDoc).eql(expectedHasDoc);
+            done();
+          }
+        );
       };
     });
 
