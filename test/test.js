@@ -1,7 +1,7 @@
 var expect = require('expect.js');
 var mongodb = require('mongodb');
 var ShareDbMongo = require('../index');
-var makeSortedQuery = require('sharedb-mingo-memory/make-sorted-query');
+var getQuery = require('sharedb-mingo-memory/get-query');
 
 var mongoUrl = process.env.TEST_MONGO_URL || 'mongodb://localhost:27017/test';
 
@@ -16,7 +16,7 @@ function create(callback) {
   });
 }
 
-require('sharedb/test/db')(create, makeSortedQuery);
+require('sharedb/test/db')({create: create, getQuery: getQuery});
 
 describe('mongo db', function() {
   beforeEach(function(done) {
