@@ -782,7 +782,7 @@ ShareDbMongo.prototype.canPollDoc = function(collectionName, query) {
 // Return true to avoid polling if there is no possibility that an op could
 // affect a query's results
 ShareDbMongo.prototype.skipPoll = function(collectionName, id, op, query) {
-  // Livedb is in charge of doing the validation of ops, so at this point we
+  // ShareDB is in charge of doing the validation of ops, so at this point we
   // should be able to assume that the op is structured validly
   if (op.create || op.del) return false;
   if (!op.op) return true;
@@ -797,7 +797,12 @@ ShareDbMongo.prototype.skipPoll = function(collectionName, id, op, query) {
     if (query.hasOwnProperty(operation)) return false;
   }
 
+  // ShareDB calls `skipPoll` inside a try/catch block. If an error is
+  // thrown, it skips polling -- we can't poll an invalid query. So in
+  // the code below, we work under the assumption that `query` is
+  // valid. If an error is thrown, that's fine.
   var fields = getFields(query);
+
   return !opContainsAnyField(op.op, fields);
 };
 
@@ -813,7 +818,9 @@ function getInnerFields(params, fields) {
   if (!params) return;
   for (var key in params) {
     var value = params[key];
-    if (key === '$or' || key === '$and') {
+    if (key === '$not') {
+      getInnerFields(value, fields);
+    } else if (key === '$or' || key === '$and' || key === '$nor') {
       for (var i = 0; i < value.length; i++) {
         var item = value[i];
         getInnerFields(item, fields);
