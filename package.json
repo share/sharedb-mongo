@@ -6,7 +6,7 @@
   "dependencies": {
     "async": "^1.4.2",
     "mongodb": "^2.1.2",
-    "sharedb": "share/sharedb"
+    "sharedb": "share/sharedb#master"
   },
   "devDependencies": {
     "coveralls": "^2.11.8",
