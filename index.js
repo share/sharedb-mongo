@@ -160,10 +160,7 @@ ShareDbMongo.prototype._connect = function(mongo, options) {
   mongodb.connect(mongo, options, finish);
 };
 
-var nextId = 0;
 ShareDbMongo.prototype.close = function(callback) {
-  if (!this.id) this.id = nextId++;
-  console.log(this.id, "close");
   if (!callback) {
     callback = function(err) {
       if (err) throw err;
@@ -172,7 +169,6 @@ ShareDbMongo.prototype.close = function(callback) {
   var self = this;
   this.getDbs(function(err, mongo, mongoPoll) {
     if (err) return callback(err);
-    console.log(self.id, "closed", self.closed);
     self.closed = true;
     mongo.close(function(err) {
       if (err) return callback(err);
