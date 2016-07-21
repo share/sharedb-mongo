@@ -178,7 +178,7 @@ ShareDbMongo.prototype.close = function(callback) {
 
 // **** Commit methods
 
-ShareDbMongo.prototype.commit = function(collectionName, id, op, snapshot, callback) {
+ShareDbMongo.prototype.commit = function(collectionName, id, op, snapshot, options, callback) {
   var self = this;
   this._writeOp(collectionName, id, op, snapshot, function(err, result) {
     if (err) return callback(err);
@@ -241,7 +241,7 @@ ShareDbMongo.prototype._writeSnapshot = function(collectionName, id, snapshot, o
 
 // **** Snapshot methods
 
-ShareDbMongo.prototype.getSnapshot = function(collectionName, id, fields, callback) {
+ShareDbMongo.prototype.getSnapshot = function(collectionName, id, fields, options, callback) {
   this.getCollection(collectionName, function(err, collection) {
     if (err) return callback(err);
     var query = {_id: id};
@@ -254,7 +254,7 @@ ShareDbMongo.prototype.getSnapshot = function(collectionName, id, fields, callba
   });
 };
 
-ShareDbMongo.prototype.getSnapshotBulk = function(collectionName, ids, fields, callback) {
+ShareDbMongo.prototype.getSnapshotBulk = function(collectionName, ids, fields, options, callback) {
   this.getCollection(collectionName, function(err, collection) {
     if (err) return callback(err);
     var query = {_id: {$in: ids}};
@@ -330,7 +330,7 @@ ShareDbMongo.prototype.getOpCollection = function(collectionName, callback) {
   });
 };
 
-ShareDbMongo.prototype.getOpsToSnapshot = function(collectionName, id, from, snapshot, callback) {
+ShareDbMongo.prototype.getOpsToSnapshot = function(collectionName, id, from, snapshot, options, callback) {
   if (snapshot._opLink == null) {
     var err = getSnapshotOpLinkErorr(collectionName, id);
     return callback(err);
@@ -344,7 +344,7 @@ ShareDbMongo.prototype.getOpsToSnapshot = function(collectionName, id, from, sna
   });
 };
 
-ShareDbMongo.prototype.getOps = function(collectionName, id, from, to, callback) {
+ShareDbMongo.prototype.getOps = function(collectionName, id, from, to, options, callback) {
   var self = this;
   this._getSnapshotOpLink(collectionName, id, function(err, doc) {
     if (err) return callback(err);
@@ -365,7 +365,7 @@ ShareDbMongo.prototype.getOps = function(collectionName, id, from, to, callback)
   });
 };
 
-ShareDbMongo.prototype.getOpsBulk = function(collectionName, fromMap, toMap, callback) {
+ShareDbMongo.prototype.getOpsBulk = function(collectionName, fromMap, toMap, options, callback) {
   var self = this;
   var ids = Object.keys(fromMap);
   this._getSnapshotOpLinkBulk(collectionName, ids, function(err, docs) {
@@ -412,7 +412,7 @@ ShareDbMongo.prototype.getOpsBulk = function(collectionName, fromMap, toMap, cal
   });
 };
 
-DB.prototype.getCommittedOpVersion = function(collectionName, id, snapshot, op, callback) {
+DB.prototype.getCommittedOpVersion = function(collectionName, id, snapshot, op, options, callback) {
   var self = this;
   this.getOpCollection(collectionName, function(err, opCollection) {
     if (err) return callback(err);
@@ -436,7 +436,7 @@ DB.prototype.getCommittedOpVersion = function(collectionName, id, snapshot, op, 
       // the ops from the snapshot to figure out if the op was actually
       // committed already, and at what version in case of multiple matches
       var from = doc.v;
-      self.getOpsToSnapshot(collectionName, id, from, snapshot, function(err, ops) {
+      self.getOpsToSnapshot(collectionName, id, from, snapshot, options, function(err, ops) {
         if (err) return callback(err);
         for (var i = ops.length; i--;) {
           var item = ops[i];
