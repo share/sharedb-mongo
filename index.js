@@ -245,7 +245,7 @@ ShareDbMongo.prototype.getSnapshot = function(collectionName, id, fields, option
   this.getCollection(collectionName, function(err, collection) {
     if (err) return callback(err);
     var query = {_id: id};
-    var projection = getProjection(fields);
+    var projection = getProjection(fields, options);
     collection.find(query).limit(1).project(projection).next(function(err, doc) {
       if (err) return callback(err);
       var snapshot = (doc) ? castToSnapshot(doc) : new MongoSnapshot(id, 0, null, undefined);
@@ -258,7 +258,7 @@ ShareDbMongo.prototype.getSnapshotBulk = function(collectionName, ids, fields, o
   this.getCollection(collectionName, function(err, collection) {
     if (err) return callback(err);
     var query = {_id: {$in: ids}};
-    var projection = getProjection(fields);
+    var projection = getProjection(fields, options);
     collection.find(query).project(projection).toArray(function(err, docs) {
       if (err) return callback(err);
       var snapshotMap = {};
@@ -335,7 +335,7 @@ ShareDbMongo.prototype.getOpsToSnapshot = function(collectionName, id, from, sna
     var err = getSnapshotOpLinkErorr(collectionName, id);
     return callback(err);
   }
-  this._getOps(collectionName, id, from, function(err, ops) {
+  this._getOps(collectionName, id, from, options, function(err, ops) {
     if (err) return callback(err);
     var filtered = getLinkedOps(ops, null, snapshot._opLink);
     var err = checkOpsFrom(collectionName, id, filtered, from);
@@ -355,7 +355,7 @@ ShareDbMongo.prototype.getOps = function(collectionName, id, from, to, options, 
       var err = doc && checkDocHasOp(collectionName, id, doc);
       if (err) return callback(err);
     }
-    self._getOps(collectionName, id, from, function(err, ops) {
+    self._getOps(collectionName, id, from, options, function(err, ops) {
       if (err) return callback(err);
       var filtered = filterOps(ops, doc, to);
       var err = checkOpsFrom(collectionName, id, filtered, from);
@@ -394,7 +394,7 @@ ShareDbMongo.prototype.getOpsBulk = function(collectionName, fromMap, toMap, opt
     // requested versions
     if (!conditions.length) return callback(null, opsMap);
     // Otherwise, get all of the ops that are newer
-    self._getOpsBulk(collectionName, conditions, function(err, opsBulk) {
+    self._getOpsBulk(collectionName, conditions, options, function(err, opsBulk) {
       if (err) return callback(err);
       for (var i = 0; i < conditions.length; i++) {
         var id = conditions[i].d;
@@ -546,26 +546,26 @@ function getOpsQuery(id, from) {
     {d: id, v: {$gte: from}};
 }
 
-ShareDbMongo.prototype._getOps = function(collectionName, id, from, callback) {
+ShareDbMongo.prototype._getOps = function(collectionName, id, from, options, callback) {
   this.getOpCollection(collectionName, function(err, opCollection) {
     if (err) return callback(err);
     var query = getOpsQuery(id, from);
     // Exclude the `d` field, which is only for use internal to livedb-mongo.
     // Also exclude the `m` field, which can be used to store metadata on ops
     // for tracking purposes
-    var projection = {d: 0, m: 0};
+    var projection = (options && options.metadata) ? {d: 0} : {d: 0, m: 0};
     var sort = {v: 1};
     opCollection.find(query).project(projection).sort(sort).toArray(callback);
   });
 };
 
-ShareDbMongo.prototype._getOpsBulk = function(collectionName, conditions, callback) {
+ShareDbMongo.prototype._getOpsBulk = function(collectionName, conditions, options, callback) {
   this.getOpCollection(collectionName, function(err, opCollection) {
     if (err) return callback(err);
     var query = {$or: conditions};
     // Exclude the `m` field, which can be used to store metadata on ops for
     // tracking purposes
-    var projection = {m: 0};
+    var projection = (options && options.metadata) ? null : {m: 0};
     var stream = opCollection.find(query).project(projection).stream();
     readOpsBulk(stream, callback);
   });
@@ -681,7 +681,7 @@ ShareDbMongo.prototype.query = function(collectionName, inputQuery, fields, opti
   var self = this;
   this.getCollection(collectionName, function(err, collection) {
     if (err) return callback(err);
-    var projection = getProjection(fields);
+    var projection = getProjection(fields, options);
     self._query(collection, inputQuery, projection, function(err, results, extra) {
       if (err) return callback(err);
       var snapshots = [];
@@ -1231,10 +1231,12 @@ function isPlainObject(value) {
 // depends on the data being stored at the top level of the document. It will
 // only work properly for json documents--which are the only types for which
 // we really want projections.
-function getProjection(fields) {
+function getProjection(fields, options) {
   // When there is no projection specified, still exclude returning the
   // metadata that is added to a doc for querying or auditing
-  if (!fields) return {_m: 0, _o: 0};
+  if (!fields) {
+    return (options && options.metadata) ? {_o: 0} : {_m: 0, _o: 0};
+  }
   // Do not project when called by ShareDB submit
   if (fields.$submit) return;
 
@@ -1244,6 +1246,7 @@ function getProjection(fields) {
   }
   projection._type = 1;
   projection._v = 1;
+  if (options && options.metadata) projection._m = 1;
   return projection;
 }
 
