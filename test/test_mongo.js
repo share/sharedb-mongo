@@ -38,7 +38,7 @@ describe('mongo db', function() {
   describe('indexes', function() {
     it('adds ops index', function(done) {
       var mongo = this.mongo;
-      this.db.commit('testcollection', 'foo', {v: 0, create: {}}, {}, function(err) {
+      this.db.commit('testcollection', 'foo', {v: 0, create: {}}, {}, null, function(err) {
         if (err) throw err;
         mongo.collection('o_testcollection').indexInformation(function(err, indexes) {
           if (err) throw err;
@@ -55,9 +55,9 @@ describe('mongo db', function() {
   describe('security options', function() {
     it('does not allow editing the system collection', function(done) {
       var db = this.db;
-      db.commit('system', 'test', {v: 0, create: {}}, {}, function(err) {
+      db.commit('system', 'test', {v: 0, create: {}}, {}, null, function(err) {
         expect(err).ok();
-        db.getSnapshot('system', 'test', null, function(err) {
+        db.getSnapshot('system', 'test', null, null, function(err) {
           expect(err).ok();
           done();
         });
@@ -144,7 +144,7 @@ describe('mongo db', function() {
       var snapshot = {type: 'json0', v: 1, data: {}, id: "test"};
 
       beforeEach(function(done) {
-        this.db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, done);
+        this.db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, null, done);
       });
 
       it('filter on id string that matches doc', function(done) {
@@ -190,9 +190,9 @@ describe('mongo db', function() {
         {type: 'json0', v: 1, data: {x: 3, y: 2}}
       ];
       var db = this.db;
-      db.commit('testcollection', 'test1', {v: 0, create: {}}, snapshots[0], function(err) {
-        db.commit('testcollection', 'test2', {v: 0, create: {}}, snapshots[1], function(err) {
-          db.commit('testcollection', 'test3', {v: 0, create: {}}, snapshots[2], function(err) {
+      db.commit('testcollection', 'test1', {v: 0, create: {}}, snapshots[0], null, function(err) {
+        db.commit('testcollection', 'test2', {v: 0, create: {}}, snapshots[1], null, function(err) {
+          db.commit('testcollection', 'test3', {v: 0, create: {}}, snapshots[2], null, function(err) {
             var query = {$distinct: {field: 'y'}};
             db.query('testcollection', query, null, null, function(err, results, extra) {
               if (err) throw err;
@@ -212,9 +212,9 @@ describe('mongo db', function() {
       ];
       var db = this.db;
       db.allowAggregateQueries = true;
-      db.commit('testcollection', 'test1', {v: 0, create: {}}, snapshots[0], function(err) {
-        db.commit('testcollection', 'test2', {v: 0, create: {}}, snapshots[1], function(err) {
-          db.commit('testcollection', 'test3', {v: 0, create: {}}, snapshots[2], function(err) {
+      db.commit('testcollection', 'test1', {v: 0, create: {}}, snapshots[0], null, function(err) {
+        db.commit('testcollection', 'test2', {v: 0, create: {}}, snapshots[1], null, function(err) {
+          db.commit('testcollection', 'test3', {v: 0, create: {}}, snapshots[2], null, function(err) {
             var query = {$aggregate: [
               {$group: {_id: '$y', count: {$sum: 1}}},
               {$sort: {count: 1}}
@@ -247,9 +247,9 @@ describe('mongo db', function() {
         {type: 'json0', v: 1, data: {player: 'b', round: 1, score: 15}}
       ];
       var db = this.db;
-      db.commit('testcollection', 'test1', {v: 0, create: {}}, snapshots[0], function(err) {
-        db.commit('testcollection', 'test2', {v: 0, create: {}}, snapshots[1], function(err) {
-          db.commit('testcollection', 'test3', {v: 0, create: {}}, snapshots[2], function(err) {
+      db.commit('testcollection', 'test1', {v: 0, create: {}}, snapshots[0], null, function(err) {
+        db.commit('testcollection', 'test2', {v: 0, create: {}}, snapshots[1], null, function(err) {
+          db.commit('testcollection', 'test3', {v: 0, create: {}}, snapshots[2], null, function(err) {
             var query = {
               $mapReduce: {
                 map: function() {
@@ -279,9 +279,9 @@ describe('mongo db', function() {
       ];
       var db = this.db;
       db.allowJSQueries = true;
-      db.commit('testcollection', 'test1', {v: 0, create: {}}, snapshots[0], function(err) {
-        db.commit('testcollection', 'test2', {v: 0, create: {}}, snapshots[1], function(err) {
-          db.commit('testcollection', 'test3', {v: 0, create: {}}, snapshots[2], function(err) {
+      db.commit('testcollection', 'test1', {v: 0, create: {}}, snapshots[0], null, function(err) {
+        db.commit('testcollection', 'test2', {v: 0, create: {}}, snapshots[1], null, function(err) {
+          db.commit('testcollection', 'test3', {v: 0, create: {}}, snapshots[2], null, function(err) {
             var query = {
               $mapReduce: {
                 map: function() {
@@ -330,7 +330,7 @@ describe('mongo db connection', function() {
       var snapshot = {type: 'json0', v: 1, data: {}, id: "test"};
       var db = this.db;
 
-      db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, function(err) {
+      db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, null, function(err) {
         if (err) throw err;
         db.query('testcollection', {}, null, null, function(err, results) {
           if (err) throw err;
@@ -358,7 +358,7 @@ describe('mongo db connection', function() {
 
       var snapshot = {type: 'json0', v: 1, data: {}, id: "test"};
       var timeBeforeCommit = new Date;
-      db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, function(err) {
+      db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, null, function(err) {
         expect((new Date) - timeBeforeCommit).lessThan(pollDelay);
 
         var timeBeforeQuery = new Date;
