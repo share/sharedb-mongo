@@ -332,7 +332,7 @@ ShareDbMongo.prototype.getOpCollection = function(collectionName, callback) {
 
 ShareDbMongo.prototype.getOpsToSnapshot = function(collectionName, id, from, snapshot, options, callback) {
   if (snapshot._opLink == null) {
-    var err = getSnapshotOpLinkErorr(collectionName, id);
+    var err = this.missingLastOperationError(collectionName, id);
     return callback(err);
   }
   this._getOps(collectionName, id, from, options, function(err, ops) {
@@ -457,13 +457,9 @@ function checkOpsFrom(collectionName, id, ops, from) {
   return ShareDbMongo.prototype.missingOpsError(collectionName, id, from);
 };
 
-function getSnapshotOpLinkErorr(collectionName, id) {
-  return this.missingLastOperationError(collectionName, id);
-}
-
 function checkDocHasOp(collectionName, id, doc) {
   if (doc._o) return;
-  return getSnapshotOpLinkErorr(collectionName, id);
+  return ShareDbMongo.prototype.missingLastOperationError(collectionName, id);
 }
 
 function isCurrentVersion(doc, version) {
