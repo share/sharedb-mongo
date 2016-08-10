@@ -100,7 +100,8 @@ ShareDbMongo.prototype.getCollectionPoll = function(collectionName, callback) {
 
 ShareDbMongo.prototype.getDbs = function(callback) {
   if (this.closed) {
-    return callback(this.alreadyClosedError());
+    var err = ShareDbMongo.alreadyClosedError();
+    return callback(err);
   }
   // We consider ouself ready to reply if this.mongo is defined and don't check
   // this.mongoPoll, since it is optional and is null by default. Thus, it's
@@ -196,7 +197,8 @@ ShareDbMongo.prototype.commit = function(collectionName, id, op, snapshot, optio
 
 ShareDbMongo.prototype._writeOp = function(collectionName, id, op, snapshot, callback) {
   if (typeof op.v !== 'number') {
-    return callback(this.invalidOpVersionError(collectionName, id, op.v));
+    var err = ShareDbMongo.invalidOpVersionError(collectionName, id, op.v);
+    return callback(err);
   }
   this.getOpCollection(collectionName, function(err, opCollection) {
     if (err) return callback(err);
@@ -292,7 +294,7 @@ ShareDbMongo.prototype.validateCollectionName = function(collectionName) {
       collectionName[1] === '_'
     )
   ) {
-    return this.invalidCollectionError(collectionName);
+    return ShareDbMongo.invalidCollectionError(collectionName);
   }
 };
 
@@ -332,7 +334,7 @@ ShareDbMongo.prototype.getOpCollection = function(collectionName, callback) {
 
 ShareDbMongo.prototype.getOpsToSnapshot = function(collectionName, id, from, snapshot, options, callback) {
   if (snapshot._opLink == null) {
-    var err = this.missingLastOperationError(collectionName, id);
+    var err = ShareDbMongo.missingLastOperationError(collectionName, id);
     return callback(err);
   }
   this._getOps(collectionName, id, from, options, function(err, ops) {
@@ -454,12 +456,12 @@ function checkOpsFrom(collectionName, id, ops, from) {
   if (ops.length === 0) return;
   if (ops[0] && ops[0].v === from) return;
   if (from == null) return;
-  return ShareDbMongo.prototype.missingOpsError(collectionName, id, from);
+  return ShareDbMongo.missingOpsError(collectionName, id, from);
 };
 
 function checkDocHasOp(collectionName, id, doc) {
   if (doc._o) return;
-  return ShareDbMongo.prototype.missingLastOperationError(collectionName, id);
+  return ShareDbMongo.missingLastOperationError(collectionName, id);
 }
 
 function isCurrentVersion(doc, version) {
@@ -648,7 +650,8 @@ ShareDbMongo.prototype._query = function(collection, inputQuery, projection, cal
     var transform = cursorTransformsMap[key];
     cursor = transform(cursor, parsed.cursorTransforms[key]);
     if (!cursor) {
-      return callback(this.malformedQueryOperatorError(key));
+      var err = ShareDbMongo.malformedQueryOperatorError(key);
+      return callback(err);
     }
   }
 
@@ -846,7 +849,7 @@ function opContainsAnyField(op, fields) {
 // Return {code: ..., message: ...}  on error. Call before parseQuery.
 ShareDbMongo.prototype.checkQuery = function(query) {
   if (query.$query) {
-    return this.$queryDeprecatedError();
+    return ShareDbMongo.$queryDeprecatedError();
   }
 
   var validMongoErr = checkValidMongo(query);
@@ -854,15 +857,15 @@ ShareDbMongo.prototype.checkQuery = function(query) {
 
   if (!this.allowJSQueries) {
     if (query.$where != null) {
-      return this.$whereDisabledError();
+      return ShareDbMongo.$whereDisabledError();
     }
     if (query.$mapReduce != null) {
-      return this.$mapReduceDisabledError();
+      return ShareDbMongo.$mapReduceDisabledError();
     }
   }
 
   if (!this.allowAggregateQueries && query.$aggregate) {
-    return this.$aggregateDisabledError();
+    return ShareDbMongo.$aggregateDisabledError();
   }
 };
 
@@ -884,14 +887,14 @@ function checkValidMongo(query) {
         // Found collection operation. Check that it's unique.
 
         if (collectionOperationKey) {
-          return ShareDbMongo.prototype.onlyOneCollectionOperationError(
+          return ShareDbMongo.onlyOneCollectionOperationError(
             collectionOperationKey, key
           );
         }
         collectionOperationKey = key;
       } else if (cursorOperationsMap[key]) {
         if (cursorOperationKey) {
-          return ShareDbMongo.prototype.onlyOneCursorOperationError(
+          return ShareDbMongo.onlyOneCursorOperationError(
             cursorOperationKey, key
           );
         }
@@ -904,7 +907,7 @@ function checkValidMongo(query) {
   }
 
   if (collectionOperationKey && foundCursorMethod) {
-    return ShareDbMongo.prototype.cursorAndCollectionMethodError(
+    return ShareDbMongo.cursorAndCollectionMethodError(
       collectionOperationKey
     );
   }
@@ -940,7 +943,8 @@ ShareDbMongo.prototype._getSafeParsedQuery = function(inputQuery, callback) {
   try {
     var parsed = parseQuery(inputQuery);
   } catch (err) {
-    callback(this.parseQueryError(err));
+    err = ShareDbMongo.parseQueryError(err);
+    callback(err);
     return null;
   }
 
@@ -1255,7 +1259,8 @@ var collectionOperationsMap = {
   },
   '$mapReduce': function(collection, query, value, cb) {
     if (typeof value !== 'object') {
-      return cb(ShareDbMongo.prototype.malformedQueryOperatorError('$mapReduce'));
+      var err = ShareDbMongo.malformedQueryOperatorError('$mapReduce');
+      return cb(err);
     }
     var mapReduceOptions = {
       query: query,
@@ -1329,45 +1334,45 @@ var cursorTransformsMap = {
 };
 
 // Bad request errors
-ShareDbMongo.prototype.invalidOpVersionError = function(collectionName, id, v) {
+ShareDbMongo.invalidOpVersionError = function(collectionName, id, v) {
   return {
     code: 4101,
     message: 'Invalid op version ' + collectionName + '.' + id + ' ' + op.v
   };
 };
-ShareDbMongo.prototype.invalidCollectionError = function(collectionName) {
+ShareDbMongo.invalidCollectionError = function(collectionName) {
   return {code: 4102, message: 'Invalid collection name ' + collectionName};
 };
-ShareDbMongo.prototype.$whereDisabledError = function() {
+ShareDbMongo.$whereDisabledError = function() {
   return {code: 4103, message: '$where queries disabled'};
 };
-ShareDbMongo.prototype.$mapReduceDisabledError = function() {
+ShareDbMongo.$mapReduceDisabledError = function() {
   return {code: 4104, message: '$mapReduce queries disabled'};
 };
-ShareDbMongo.prototype.$aggregateDisabledError = function() {
+ShareDbMongo.$aggregateDisabledError = function() {
   return {code: 4105, message: '$aggregate queries disabled'};
 };
-ShareDbMongo.prototype.$queryDeprecatedError = function() {
+ShareDbMongo.$queryDeprecatedError = function() {
   return {code: 4106, message: '$query property deprecated in queries'};
 };
-ShareDbMongo.prototype.malformedQueryOperatorError = function(operator) {
+ShareDbMongo.malformedQueryOperatorError = function(operator) {
   return {code: 4107, message: "Malformed query operator: " + operator};
 };
-ShareDbMongo.prototype.onlyOneCollectionOperationError = function(operation1, operation2) {
+ShareDbMongo.onlyOneCollectionOperationError = function(operation1, operation2) {
   return {
     code: 4108,
     message: 'Only one collection operation allowed. ' +
       'Found ' + operation1 + ' and ' + operation2
-  }
+  };
 };
-ShareDbMongo.prototype.onlyOneCursorOperationError = function(operation1, operation2) {
+ShareDbMongo.onlyOneCursorOperationError = function(operation1, operation2) {
   return {
     code: 4109,
     message: 'Only one cursor operation allowed. ' +
       'Found ' + operation1 + ' and ' + operation2
-  }
+  };
 };
-ShareDbMongo.prototype.cursorAndCollectionMethodError = function(collectionOperation) {
+ShareDbMongo.cursorAndCollectionMethodError = function(collectionOperation) {
   return {
     code: 4110,
     message: 'Cursor methods can\'t run after collection method ' +
@@ -1376,23 +1381,23 @@ ShareDbMongo.prototype.cursorAndCollectionMethodError = function(collectionOpera
 };
 
 // Internal errors
-ShareDbMongo.prototype.alreadyClosedError = function() {
+ShareDbMongo.alreadyClosedError = function() {
   return {code: 5101, message: 'Already closed'};
 };
-ShareDbMongo.prototype.missingLastOperationError = function(collectionName, id) {
+ShareDbMongo.missingLastOperationError = function(collectionName, id) {
   return {
     code: 5102,
     message: 'Snapshot missing last operation field "_o" ' + collectionName + '.' + id
   };
 };
-ShareDbMongo.prototype.missingOpsError = function(collectionName, id, from) {
+ShareDbMongo.missingOpsError = function(collectionName, id, from) {
   return {
     code: 5103,
     message: 'Missing ops from requested version ' + collectionName + '.' + id + ' ' + from
-  }
+  };
 };
 // Modifies 'err' argument
-ShareDbMongo.prototype.parseQueryError = function(err) {
-  err.code = 5104
+ShareDbMongo.parseQueryError = function(err) {
+  err.code = 5104;
   return err;
 };
