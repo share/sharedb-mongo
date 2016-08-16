@@ -33,12 +33,12 @@ There are two ways to instantiate a sharedb-mongo wrapper:
 1. The simplest way is to invoke the module and pass in your mongo DB
 arguments as arguments to the module function. For example:
 
-var db = require('sharedb-mongo')('localhost:27017/test');
+var db = require('sharedb-mongo')('mongodb://localhost:27017/test');
 
 2. If you already have a function that creates a mongo connection that
 you want to use, you alternatively can pass it into sharedb-mongo:
 
-require('mongodb').connect('localhost:27017/test', function(err, mongo) {
+require('mongodb').connect('mongodb://localhost:27017/test', function(err, mongo) {
   if (err) throw err;
   var db = require('sharedb-mongo')({mongo: function(callback) {
     // callback expects (err, db)
