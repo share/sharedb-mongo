@@ -398,6 +398,12 @@ describe('parse query', function() {
       addsType({foo: {$bitsAllSet: 1}}); // We don't try to analyze $bitsAllSet
     });
 
+    it('does not modify already set type', function() {
+      doesNotModify({_type: null});
+      doesNotModify({_type: 'foo'});
+      doesNotModify({_type: {$ne: null}});
+    });
+
     it('$ne', function() {
       addsType({foo: {$ne: 1}});
       doesNotModify({foo: {$ne: 1}, bar: 1});

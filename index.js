@@ -1024,6 +1024,8 @@ ShareDbMongo._parseQuery = parseQuery; // for tests
 // Call on a query after it gets parsed to make it safe against
 // matching deleted documents.
 function makeQuerySafe(query) {
+  // Don't modify the query if the user explicitly sets _type already
+  if (query.hasOwnProperty('_type')) return;
   // Deleted documents are kept around so that we can start their version from
   // the last version if they get recreated. When docs are deleted, their data
   // properties are cleared and _type is set to null. Filter out deleted docs
