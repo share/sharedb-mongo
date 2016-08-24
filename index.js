@@ -1025,10 +1025,12 @@ ShareDbMongo._parseQuery = parseQuery; // for tests
 // matching deleted documents.
 function makeQuerySafe(query) {
   // Deleted documents are kept around so that we can start their version from
-  // the last version if they get recreated. Lack of a type indicates that a
-  // snapshot is deleted, so don't return any documents with a null type
+  // the last version if they get recreated. When docs are deleted, their data
+  // properties are cleared and _type is set to null. Filter out deleted docs
+  // by requiring that _type is a string if the query does not naturally
+  // restrict the results with other keys
   if (deletedDocCouldSatisfyQuery(query)) {
-    query._type = {$ne: null};
+    query._type = {$type: 2};
   }
 };
 ShareDbMongo._makeQuerySafe = makeQuerySafe; // for tests
