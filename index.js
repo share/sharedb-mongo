@@ -1054,7 +1054,7 @@ function deletedDocCouldSatisfyQuery(query) {
   // * `{$in: [A, B, C]}}` where all of A, B, C are non-null.
   // * `{$ne: null}`
   // * `{$exists: true}`
-  // * `{$gt: not null}`, `{gte: not null}`, `{$lt: not null}`, `{$lte: nou null}`
+  // * `{$gt: not null}`, `{gte: not null}`, `{$lt: not null}`, `{$lte: not null}`
   //
   // In addition, some queries that have `$and` or `$or` at the
   // top-level can't match deleted docs:
