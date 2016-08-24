@@ -404,6 +404,26 @@ describe('parse query', function() {
       doesNotModify({_type: {$ne: null}});
     });
 
+    it('ignores fields that remain set on deleted docs', function() {
+      addsType({_id: 'x'});
+      addsType({_o: 'x'});
+      addsType({_v: 2});
+      addsType({_m: {mtime: 2}});
+      addsType({'_m.mtime': 2});
+
+      addsType({_id: 'x', foo: null});
+      addsType({_o: 'x', foo: null});
+      addsType({_v: 2, foo: null});
+      addsType({_m: {mtime: 2}, foo: null});
+      addsType({'_m.mtime': 2, foo: null});
+
+      doesNotModify({_id: 'x', foo: 1});
+      doesNotModify({_o: 'x', foo: 1});
+      doesNotModify({_v: 2, foo: 1});
+      doesNotModify({_m: {mtime: 2}, foo: 1});
+      doesNotModify({'_m.mtime': 2, foo: 1});
+    });
+
     it('$ne', function() {
       addsType({foo: {$ne: 1}});
       doesNotModify({foo: {$ne: 1}, bar: 1});

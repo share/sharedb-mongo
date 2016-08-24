@@ -1099,6 +1099,19 @@ function deletedDocCouldSatisfyQuery(query) {
   }
 
   for (var prop in query) {
+    // Ignore fields that remain set on deleted docs
+    if (
+      prop === '_id' ||
+      prop === '_v' ||
+      prop === '_o' ||
+      prop === '_m' || (
+        prop[0] === '_' &&
+        prop[1] === 'm' &&
+        prop[2] === '.'
+      )
+    ) {
+      continue;
+    }
     // When using top-level operators that we don't understand, play
     // it safe
     if (prop[0] === '$') {
