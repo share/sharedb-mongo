@@ -948,7 +948,7 @@ ShareDbMongo.prototype._getSafeParsedQuery = function(inputQuery, callback) {
     return null;
   }
 
-  makeQuerySafe(parsed);
+  makeQuerySafe(parsed.query);
   return parsed;
 };
 
@@ -1023,12 +1023,12 @@ ShareDbMongo._parseQuery = parseQuery; // for tests
 
 // Call on a query after it gets parsed to make it safe against
 // matching deleted documents.
-function makeQuerySafe(parsedQuery) {
+function makeQuerySafe(query) {
   // Deleted documents are kept around so that we can start their version from
   // the last version if they get recreated. Lack of a type indicates that a
   // snapshot is deleted, so don't return any documents with a null type
-  if (deletedDocCouldSatisfyQuery(parsedQuery.query)) {
-    parsedQuery.query._type = {$ne: null};
+  if (deletedDocCouldSatisfyQuery(query)) {
+    query._type = {$ne: null};
   }
 };
 ShareDbMongo._makeQuerySafe = makeQuerySafe; // for tests

@@ -380,13 +380,13 @@ describe('parse query', function() {
     var queryWithTypeNeNull = shallowClone(query);
     queryWithTypeNeNull._type = {$ne: null};
     var parsedQuery = parseQuery(query);
-    makeQuerySafe(parsedQuery);
+    makeQuerySafe(parsedQuery.query);
     expect(parsedQuery.query).eql(queryWithTypeNeNull);
   };
 
   var queryIsSafeAsIs = function(query) {
     var parsedQuery = parseQuery(query);
-    makeQuerySafe(parsedQuery);
+    makeQuerySafe(parsedQuery.query);
     expect(parsedQuery.query).eql(query);
   };
 
