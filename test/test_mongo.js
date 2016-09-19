@@ -50,6 +50,20 @@ describe('mongo db', function() {
         });
       });
     });
+
+    it('respects unique indexes', function(done) {
+      var db = this.db;
+      this.mongo.collection('testcollection').createIndex({x: 1}, {unique: true}, function(err) {
+        if (err) return done(err);
+        db.commit('testcollection', 'foo', {v: 0, create: {}}, {v: 1, data: {x: 7}}, null, function(err, succeeded) {
+          if (err) return done(err);
+          db.commit('testcollection', 'bar', {v: 0, create: {}}, {v: 1, data: {x: 7}}, null, function(err, succeeded) {
+            expect(err && err.code).equal(11000);
+            done();
+          });
+        });
+      });
+    });
   });
 
   describe('security options', function() {

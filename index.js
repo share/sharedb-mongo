@@ -225,7 +225,9 @@ ShareDbMongo.prototype._writeSnapshot = function(collectionName, id, snapshot, o
         if (err) {
           // Return non-success instead of duplicate key error, since this is
           // expected to occur during simultaneous creates on the same id
-          if (err.code === 11000) return callback(null, false);
+          if (err.code === 11000 && /\.\$_id_ /.test(err.message)) {
+            return callback(null, false);
+          }
           return callback(err);
         }
         callback(null, true);
