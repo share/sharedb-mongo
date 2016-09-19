@@ -8,9 +8,9 @@ var mongoUrl = process.env.TEST_MONGO_URL || 'mongodb://localhost:27017/test';
 function create(callback) {
   var db = ShareDbMongo({mongo: function(shareDbCallback) {
     mongodb.connect(mongoUrl, function(err, mongo) {
-      if (err) throw err;
+      if (err) return callback(err);
       mongo.dropDatabase(function(err) {
-        if (err) throw err;
+        if (err) return callback(err);
         shareDbCallback(null, mongo);
         callback(null, db, mongo);
       });
@@ -24,7 +24,7 @@ describe('mongo db', function() {
   beforeEach(function(done) {
     var self = this;
     create(function(err, db, mongo) {
-      if (err) throw err;
+      if (err) return done(err);
       self.db = db;
       self.mongo = mongo;
       done();
@@ -39,9 +39,9 @@ describe('mongo db', function() {
     it('adds ops index', function(done) {
       var mongo = this.mongo;
       this.db.commit('testcollection', 'foo', {v: 0, create: {}}, {}, null, function(err) {
-        if (err) throw err;
+        if (err) return done(err);
         mongo.collection('o_testcollection').indexInformation(function(err, indexes) {
-          if (err) throw err;
+          if (err) return done(err);
           // Index for getting document(s) ops
           expect(indexes['d_1_v_1']).ok();
           // Index for checking committed op(s) by src and seq
@@ -191,11 +191,14 @@ describe('mongo db', function() {
       ];
       var db = this.db;
       db.commit('testcollection', 'test1', {v: 0, create: {}}, snapshots[0], null, function(err) {
+        if (err) return done(err);
         db.commit('testcollection', 'test2', {v: 0, create: {}}, snapshots[1], null, function(err) {
+          if (err) return done(err);
           db.commit('testcollection', 'test3', {v: 0, create: {}}, snapshots[2], null, function(err) {
+            if (err) return done(err);
             var query = {$distinct: {field: 'y'}};
             db.query('testcollection', query, null, null, function(err, results, extra) {
-              if (err) throw err;
+              if (err) return done(err);
               expect(extra).eql([1, 2]);
               done();
             });
@@ -213,14 +216,17 @@ describe('mongo db', function() {
       var db = this.db;
       db.allowAggregateQueries = true;
       db.commit('testcollection', 'test1', {v: 0, create: {}}, snapshots[0], null, function(err) {
+        if (err) return done(err);
         db.commit('testcollection', 'test2', {v: 0, create: {}}, snapshots[1], null, function(err) {
+          if (err) return done(err);
           db.commit('testcollection', 'test3', {v: 0, create: {}}, snapshots[2], null, function(err) {
+            if (err) return done(err);
             var query = {$aggregate: [
               {$group: {_id: '$y', count: {$sum: 1}}},
               {$sort: {count: 1}}
             ]};
             db.query('testcollection', query, null, null, function(err, results, extra) {
-              if (err) throw err;
+              if (err) return done(err);
               expect(extra).eql([{_id: 1, count: 1}, {_id: 2, count: 2}]);
               done();
             });
@@ -248,8 +254,11 @@ describe('mongo db', function() {
       ];
       var db = this.db;
       db.commit('testcollection', 'test1', {v: 0, create: {}}, snapshots[0], null, function(err) {
+        if (err) return done(err);
         db.commit('testcollection', 'test2', {v: 0, create: {}}, snapshots[1], null, function(err) {
+          if (err) return done(err);
           db.commit('testcollection', 'test3', {v: 0, create: {}}, snapshots[2], null, function(err) {
+            if (err) return done(err);
             var query = {
               $mapReduce: {
                 map: function() {
@@ -280,8 +289,11 @@ describe('mongo db', function() {
       var db = this.db;
       db.allowJSQueries = true;
       db.commit('testcollection', 'test1', {v: 0, create: {}}, snapshots[0], null, function(err) {
+        if (err) return done(err);
         db.commit('testcollection', 'test2', {v: 0, create: {}}, snapshots[1], null, function(err) {
+          if (err) return done(err);
           db.commit('testcollection', 'test3', {v: 0, create: {}}, snapshots[2], null, function(err) {
+            if (err) return done(err);
             var query = {
               $mapReduce: {
                 map: function() {
@@ -295,7 +307,7 @@ describe('mongo db', function() {
               }
             };
             db.query('testcollection', query, null, null, function(err, results, extra) {
-              if (err) throw err;
+              if (err) return done(err);
               expect(extra).eql([{_id: 'a', value: 12}, {_id: 'b', value: 15}]);
               done();
             });
@@ -314,9 +326,9 @@ describe('mongo db connection', function() {
       // This will enqueue the callback, testing the 'pendingConnect'
       // logic.
       this.db.getDbs(function(err, mongo, mongoPoll) {
-        if (err) throw err;
+        if (err) return done(err);
         mongo.dropDatabase(function(err) {
-          if (err) throw err;
+          if (err) return done(err);
           done();
         });
       });
@@ -331,9 +343,9 @@ describe('mongo db connection', function() {
       var db = this.db;
 
       db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, null, function(err) {
-        if (err) throw err;
+        if (err) return done(err);
         db.query('testcollection', {}, null, null, function(err, results) {
-          if (err) throw err;
+          if (err) return done(err);
           expect(results).eql([snapshot]);
           done();
         });
@@ -359,10 +371,12 @@ describe('mongo db connection', function() {
       var snapshot = {type: 'json0', v: 1, data: {}, id: "test"};
       var timeBeforeCommit = new Date;
       db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, null, function(err) {
+        if (err) return done(err);
         expect((new Date) - timeBeforeCommit).lessThan(pollDelay);
 
         var timeBeforeQuery = new Date;
         db.queryPoll('testcollection', {}, null, function(err, results) {
+          if (err) return done(err);
           expect(results.length).eql(1);
           expect((new Date) - timeBeforeQuery).greaterThan(pollDelay);
           done();
