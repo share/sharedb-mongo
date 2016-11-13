@@ -25,8 +25,7 @@ together with snapshots.
 
 ## Usage
 
-`sharedb-mongo` wraps native [mongodb](https://github.com/mongodb/node-
-mongodb-native), and it supports the same configuration options.
+`sharedb-mongo` wraps native [mongodb](https://github.com/mongodb/node-mongodb-native), and it supports the same configuration options.
 
 There are two ways to instantiate a sharedb-mongo wrapper:
 
