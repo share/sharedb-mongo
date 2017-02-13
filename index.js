@@ -155,7 +155,24 @@ ShareDbMongo.prototype._connect = function(mongo, options) {
     mongo(finish);
     return;
   }
-  mongodb.connect(mongo, options, finish);
+  // Get mongo options from the explicitly defined field `mongoOptions` or
+  // sanitize the whole options object by removing all ShareDB-specific options
+  // TODO: Deprecate the ability to pass mongo options implicitly
+  var mongoOptions;
+  if (options.mongoOptions) {
+    mongoOptions = options.mongoOptions;
+  } else {
+    mongoOptions = Object.assign({}, options);
+    delete options.mongo;
+    delete options.pollDelay;
+    delete options.mongoPoll;
+    delete options.mongoPollOptions;
+    delete options.disableIndexCreation;
+    delete options.allowAllQueries;
+    delete options.allowJSQueries;
+    delete options.allowAggregateQueries;
+  }
+  mongodb.connect(mongo, mongoOptions, finish);
 };
 
 ShareDbMongo.prototype.close = function(callback) {
