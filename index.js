@@ -163,14 +163,14 @@ ShareDbMongo.prototype._connect = function(mongo, options) {
     mongoOptions = options.mongoOptions;
   } else {
     mongoOptions = Object.assign({}, options);
-    delete options.mongo;
-    delete options.pollDelay;
-    delete options.mongoPoll;
-    delete options.mongoPollOptions;
-    delete options.disableIndexCreation;
-    delete options.allowAllQueries;
-    delete options.allowJSQueries;
-    delete options.allowAggregateQueries;
+    delete mongoOptions.mongo;
+    delete mongoOptions.pollDelay;
+    delete mongoOptions.mongoPoll;
+    delete mongoOptions.mongoPollOptions;
+    delete mongoOptions.disableIndexCreation;
+    delete mongoOptions.allowAllQueries;
+    delete mongoOptions.allowJSQueries;
+    delete mongoOptions.allowAggregateQueries;
   }
   mongodb.connect(mongo, mongoOptions, finish);
 };
