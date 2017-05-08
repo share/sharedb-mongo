@@ -45,10 +45,8 @@ a mongo instance.
 ```javascript
 const mongodb = require('mongodb');
 const db = require('sharedb-mongo')({mongo: function(callback) {
-  mongodb.connect('mongodb://localhost:27017/test', function(err, mongo) {
-    callback(err, mongo);
-  }});
-});
+  mongodb.connect('mongodb://localhost:27017/test', callback);
+}});
 const backend = new ShareDB({db});
 ```
 
