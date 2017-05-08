@@ -38,16 +38,18 @@ const db = require('sharedb-mongo')('mongodb://localhost:27017/test');
 const backend = new ShareDB({db});
 ```
 
-2. If you already have a function that creates a mongo connection that
-you want to use, you alternatively can pass it into sharedb-mongo:
+2. If you'd like to reuse a mongo db connection or handle mongo driver
+instantiation yourself, you can pass in a function that calls back with
+a mongo instance.
 
 ```javascript
-require('mongodb').connect('mongodb://localhost:27017/test', function(err, mongo) {
-  if (err) throw err;
-  var db = require('sharedb-mongo')({mongo: function(callback) {
-    // callback expects (err, db)
+const mongodb = require('mongodb');
+const db = require('sharedb-mongo')({mongo: function(callback) {
+  mongodb.connect('mongodb://localhost:27017/test', function(err, mongo) {
+    callback(err, mongo);
   }});
 });
+const backend = new ShareDB({db});
 ```
 
 
