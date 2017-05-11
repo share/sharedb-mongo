@@ -14,6 +14,7 @@ env:
   - MONGODB_VERSION="2.6"
   - MONGODB_VERSION="3.0"
   - MONGODB_VERSION="3.2"
+  - MONGODB_VERSION="3.4"
 
 before_install:
   - docker run -d -p 127.0.0.1:27017:27017 mongo:$MONGODB_VERSION
