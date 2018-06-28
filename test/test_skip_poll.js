@@ -1,6 +1,6 @@
 var expect = require('expect.js');
 var ShareDbMongo = require('../index');
-var checkOp = require('sharedb/lib/ot').checkOp;
+var checkOp = require('@teamwork/sharedb/lib/ot').checkOp;
 
 describe('skipPoll', function() {
   // Run a test function against a small sample set of queries
