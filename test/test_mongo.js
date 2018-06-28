@@ -7,9 +7,9 @@ var mongoUrl = process.env.TEST_MONGO_URL || 'mongodb://localhost:27017/test';
 
 function create(callback) {
   var db = ShareDbMongo({mongo: function(shareDbCallback) {
-    mongodb.connect(mongoUrl, function(err, mongo) {
+    mongodb.connect(mongoUrl, { useNewUrlParser: true }, function(err, mongo) {
       if (err) return callback(err);
-      mongo.dropDatabase(function(err) {
+      mongo.db().dropDatabase(function(err) {
         if (err) return callback(err);
         shareDbCallback(null, mongo);
         callback(null, db, mongo);
@@ -40,7 +40,7 @@ describe('mongo db', function() {
       var mongo = this.mongo;
       this.db.commit('testcollection', 'foo', {v: 0, create: {}}, {}, null, function(err) {
         if (err) return done(err);
-        mongo.collection('o_testcollection').indexInformation(function(err, indexes) {
+        mongo.db().collection('o_testcollection').indexInformation(function(err, indexes) {
           if (err) return done(err);
           // Index for getting document(s) ops
           expect(indexes['d_1_v_1']).ok();
@@ -53,7 +53,7 @@ describe('mongo db', function() {
 
     it('respects unique indexes', function(done) {
       var db = this.db;
-      this.mongo.collection('testcollection').createIndex({x: 1}, {unique: true}, function(err) {
+      this.mongo.db().collection('testcollection').createIndex({x: 1}, {unique: true}, function(err) {
         if (err) return done(err);
         db.commit('testcollection', 'foo', {v: 0, create: {}}, {v: 1, data: {x: 7}}, null, function(err, succeeded) {
           if (err) return done(err);
@@ -341,7 +341,7 @@ describe('mongo db connection', function() {
       // logic.
       this.db.getDbs(function(err, mongo, mongoPoll) {
         if (err) return done(err);
-        mongo.dropDatabase(function(err) {
+        mongo.db().dropDatabase(function(err) {
           if (err) return done(err);
           done();
         });

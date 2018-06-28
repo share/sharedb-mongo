@@ -70,7 +70,7 @@ ShareDbMongo.prototype.getCollection = function(collectionName, callback) {
   // Gotcha: calls back sync if connected or async if not
   this.getDbs(function(err, mongo) {
     if (err) return callback(err);
-    var collection = mongo.collection(collectionName);
+    var collection = mongo.db().collection(collectionName);
     return callback(null, collection);
   });
 };
@@ -82,7 +82,7 @@ ShareDbMongo.prototype._getCollectionPoll = function(collectionName, callback) {
   // Gotcha: calls back sync if connected or async if not
   this.getDbs(function(err, mongo, mongoPoll) {
     if (err) return callback(err);
-    var collection = (mongoPoll || mongo).collection(collectionName);
+    var collection = (mongoPoll || mongo).db().collection(collectionName);
     return callback(null, collection);
   });
 };
@@ -118,6 +118,14 @@ ShareDbMongo.prototype._flushPendingConnect = function() {
   }
 };
 
+ShareDbMongo.prototype._mongodbOptions = function(options) {
+  if(options instanceof Object) {
+    return Object.assign(Object.assign({}, options.mongoOptions), { useNewUrlParser: true })
+  } else {
+    return  { useNewUrlParser: true };
+  }
+}
+
 ShareDbMongo.prototype._connect = function(mongo, options) {
   // Create the mongo connection client connections if needed
   //
@@ -131,10 +139,10 @@ ShareDbMongo.prototype._connect = function(mongo, options) {
     } else {
       tasks = {
         mongo: function(parallelCb) {
-          mongodb.connect(mongo, options.mongoOptions, parallelCb);
+          mongodb.connect(mongo, self._mongodbOptions(options.mongoOptions), parallelCb);
         },
         mongoPoll: function(parallelCb) {
-          mongodb.connect(options.mongoPoll, options.mongoPollOptions, parallelCb);
+          mongodb.connect(options.mongoPoll, self._mongodbOptions(options.mongoPollOptions), parallelCb);
         }
       };
     }
@@ -155,7 +163,7 @@ ShareDbMongo.prototype._connect = function(mongo, options) {
     mongo(finish);
     return;
   }
-  mongodb.connect(mongo, options, finish);
+  mongodb.connect(mongo, this._mongodbOptions(options), finish);
 };
 
 ShareDbMongo.prototype.close = function(callback) {
@@ -306,7 +314,7 @@ ShareDbMongo.prototype.getOpCollection = function(collectionName, callback) {
   this.getDbs(function(err, mongo) {
     if (err) return callback(err);
     var name = self.getOplogCollectionName(collectionName);
-    var collection = mongo.collection(name);
+    var collection = mongo.db().collection(name);
     // Given the potential problems with creating indexes on the fly, it might
     // be preferrable to disable automatic creation
     if (self.disableIndexCreation) {
@@ -1274,7 +1282,17 @@ var collectionOperationsMap = {
     collection.distinct(value.field, query, cb);
   },
   '$aggregate': function(collection, query, value, cb) {
-    collection.aggregate(value, cb);
+    collection.aggregate(value, function(err, cursor) {
+      if(err) {
+        return cb(err);
+      }
+      cursor.toArray(function (err, res) {
+        if(err) {
+          return cb(err);
+        }
+        return cb(null, res);
+      });
+    });
   },
   '$mapReduce': function(collection, query, value, cb) {
     if (typeof value !== 'object') {
