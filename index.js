@@ -1,6 +1,6 @@
 var async = require('async');
 var mongodb = require('mongodb');
-var DB = require('sharedb').DB;
+var DB = require('@teamwork/sharedb').DB;
 
 module.exports = ShareDbMongo;
 
@@ -70,7 +70,7 @@ ShareDbMongo.prototype.getCollection = function(collectionName, callback) {
   // Gotcha: calls back sync if connected or async if not
   this.getDbs(function(err, mongo) {
     if (err) return callback(err);
-    var collection = mongo.collection(collectionName);
+    var collection = mongo.db().collection(collectionName);
     return callback(null, collection);
   });
 };
@@ -82,7 +82,7 @@ ShareDbMongo.prototype._getCollectionPoll = function(collectionName, callback) {
   // Gotcha: calls back sync if connected or async if not
   this.getDbs(function(err, mongo, mongoPoll) {
     if (err) return callback(err);
-    var collection = (mongoPoll || mongo).collection(collectionName);
+    var collection = (mongoPoll || mongo).db().collection(collectionName);
     return callback(null, collection);
   });
 };
@@ -306,7 +306,7 @@ ShareDbMongo.prototype.getOpCollection = function(collectionName, callback) {
   this.getDbs(function(err, mongo) {
     if (err) return callback(err);
     var name = self.getOplogCollectionName(collectionName);
-    var collection = mongo.collection(name);
+    var collection = mongo.db().collection(name);
     // Given the potential problems with creating indexes on the fly, it might
     // be preferrable to disable automatic creation
     if (self.disableIndexCreation) {
@@ -1274,7 +1274,18 @@ var collectionOperationsMap = {
     collection.distinct(value.field, query, cb);
   },
   '$aggregate': function(collection, query, value, cb) {
-    collection.aggregate(value, cb);
+    collection.aggregate(value, function(err, cursor) {
+      if(err) {
+        return cb(err);
+      }
+      cursor.toArray(function (err, res) {
+        if(err) {
+          return cb(err);
+        }
+        return cb(null, res);
+      });
+      
+    });
   },
   '$mapReduce': function(collection, query, value, cb) {
     if (typeof value !== 'object') {

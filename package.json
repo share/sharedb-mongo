@@ -4,16 +4,16 @@
   "description": "MongoDB database adapter for ShareDB",
   "main": "index.js",
   "dependencies": {
-    "async": "^1.4.2",
-    "mongodb": "^2.1.2",
-    "sharedb": "^1.0.0-beta"
+    "async": "^2.6.1",
+    "mongodb": "^3.1.0",
+    "@teamwork/sharedb": "^1.2.0"
   },
   "devDependencies": {
-    "coveralls": "^2.11.8",
+    "coveralls": "^3.0.1",
     "expect.js": "^0.3.1",
-    "istanbul": "^0.4.2",
-    "mocha": "^2.3.3",
-    "sharedb-mingo-memory": "^1.0.0-beta"
+    "istanbul": "^0.4.5",
+    "mocha": "^5.2.0",
+    "@teamwork/sharedb-mingo-memory": "^1.0.0"
   },
   "scripts": {
     "test": "node_modules/.bin/mocha",
