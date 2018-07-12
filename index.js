@@ -534,10 +534,10 @@ function getLinkedOps(ops, to, link) {
     if (to == null || op.v < to) {
       delete op._id;
       delete op.o;
-      linkedOps.unshift(op);
+      linkedOps.push(op);
     }
   }
-  return linkedOps;
+  return linkedOps.reverse();
 }
 
 function getOpsQuery(id, from) {
