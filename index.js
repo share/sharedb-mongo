@@ -339,7 +339,7 @@ ShareDbMongo.prototype.getOpsToSnapshot = function(collectionName, id, from, sna
     var err = ShareDbMongo.missingLastOperationError(collectionName, id);
     return callback(err);
   }
-  this._getOps(collectionName, id, from, options, function(err, ops) {
+  this._getOps(collectionName, id, from, null, options, function(err, ops) {
     if (err) return callback(err);
     var filtered = getLinkedOps(ops, null, snapshot._opLink);
     var err = checkOpsFrom(collectionName, id, filtered, from);
@@ -350,18 +350,22 @@ ShareDbMongo.prototype.getOpsToSnapshot = function(collectionName, id, from, sna
 
 ShareDbMongo.prototype.getOps = function(collectionName, id, from, to, options, callback) {
   var self = this;
-  this._getSnapshotOpLink(collectionName, id, function(err, doc) {
+  this._getOpLink(collectionName, id, to, function(err, opLink) {
     if (err) return callback(err);
-    if (doc) {
-      if (isCurrentVersion(doc, from)) {
+    // We need to fetch slightly more ops than requested in order to work backwards along
+    // linked ops to provide only valid ops
+    var fetchOpsTo = null;
+    if (opLink) {
+      if (isCurrentVersion(opLink, from)) {
         return callback(null, []);
       }
-      var err = doc && checkDocHasOp(collectionName, id, doc);
+      var err = opLink && checkDocHasOp(collectionName, id, opLink);
       if (err) return callback(err);
+      fetchOpsTo = opLink._v;
     }
-    self._getOps(collectionName, id, from, options, function(err, ops) {
+    self._getOps(collectionName, id, from, fetchOpsTo, options, function(err, ops) {
       if (err) return callback(err);
-      var filtered = filterOps(ops, doc, to);
+      var filtered = filterOps(ops, opLink, to);
       var err = checkOpsFrom(collectionName, id, filtered, from);
       if (err) return callback(err);
       callback(null, filtered);
@@ -540,16 +544,24 @@ function getLinkedOps(ops, to, link) {
   return linkedOps.reverse();
 }
 
-function getOpsQuery(id, from) {
-  return (from == null) ?
-    {d: id} :
-    {d: id, v: {$gte: from}};
+function getOpsQuery(id, from, to) {
+  from = from == null ? 0 : from;
+  var query = {
+    d: id,
+    v: { $gte: from }
+  };
+
+  if (to != null) {
+    query.v.$lt = to;
+  }
+
+  return query;
 }
 
-ShareDbMongo.prototype._getOps = function(collectionName, id, from, options, callback) {
+ShareDbMongo.prototype._getOps = function(collectionName, id, from, to, options, callback) {
   this.getOpCollection(collectionName, function(err, opCollection) {
     if (err) return callback(err);
-    var query = getOpsQuery(id, from);
+    var query = getOpsQuery(id, from, to);
     // Exclude the `d` field, which is only for use internal to livedb-mongo.
     // Also exclude the `m` field, which can be used to store metadata on ops
     // for tracking purposes
@@ -597,6 +609,92 @@ function readOpsBulk(stream, callback) {
       opsMap[id] = [op];
     }
     delete op.d;
+  });
+}
+
+ShareDbMongo.prototype._getOpLink = function(collectionName, id, to, callback) {
+  var db = this;
+  this.getOpCollection(collectionName, function (error, collection) {
+    if (error) return callback(error);
+
+    var query = {
+      d: id,
+      v: { $gte: to }
+    };
+
+    var projection = {
+      _id: 0,
+      v: 1,
+      o: 1
+    };
+
+    var cursor = collection.find(query).sort({ v: 1 }).project(projection);
+
+    getFirstOpWithUniqueVersion(cursor, function (error, op) {
+      if (error) return callback(error);
+      if (op) return callback(null, { _o: op.o, _v: op.v });
+
+      // If we couldn't find an op to link back from, then fall back to using the current
+      // snapshot, which is guaranteed to have a link to a valid op.
+      db._getSnapshotOpLink(collectionName, id, callback);
+    });
+  });
+};
+
+// When getting ops, we need to consider the case where an op is committed to the database,
+// but its application to the snapshot is subsequently rejected. This can leave multiple ops
+// with the same values for 'd' and 'v', and means that we may return multiple ops for a single
+// version if we just perform a naive 'find' operation.
+// To avoid this, we try to fetch the first op after 'to' which has a unique 'v', and then we
+// work backwards from that op using the linked op 'o' field to get a valid chain of ops.
+function getFirstOpWithUniqueVersion(cursor, ops, callback) {
+  if (typeof ops === 'function') {
+    callback = ops;
+    ops = [];
+  }
+
+  // We have to look back at the last 3 ops to determine if the version in the middle was
+  // unique. For example, if we get 1 -> 2 -> 3 then we know that v2 is unique (and we can't
+  // make the same assumption about v3, because the next op we fetch might also be v3).
+  var currentOp = ops[ops.length - 1]
+  var previousOp = ops[ops.length - 2];
+  var oneBeforePreviousOp = ops[ops.length - 3];
+
+  var currentVersion = currentOp && currentOp.v;
+  var previousVersion = previousOp && previousOp.v;
+  var oneBeforePreviousVersion = oneBeforePreviousOp && oneBeforePreviousOp.v;
+
+  var previousVersionWasUnique = typeof previousVersion === 'number'
+    && previousVersion !== currentVersion
+    && previousVersion !== oneBeforePreviousVersion;
+
+  if (previousVersionWasUnique) {
+    return cursor.close(function (error) {
+      callback(error, previousOp);
+    });
+  }
+
+  cursor.hasNext(function (error, hasNext) {
+    if (error) return callback(error);
+
+    if (hasNext) {
+      cursor.next(function (error, op) {
+        if (error) return callback(error);
+        ops.push(op);
+        getFirstOpWithUniqueVersion(cursor, ops, callback);
+      });
+    } else {
+      // If there's no next op to fetch, then we now know the current version is unique so
+      // long as it doesn't match the previous version.
+      var currentVersionIsUnique = typeof currentVersion === 'number'
+        && currentVersion !== previousVersion;
+
+      var op = currentVersionIsUnique ? currentOp : null;
+
+      cursor.close(function (error) {
+        callback(error, op);
+      });
+    }
   });
 }
 
