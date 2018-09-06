@@ -83,6 +83,20 @@ For a full list of supported collection and cursor methods, see
 `collectionOperationsMap`, `cursorTransformsMap` and
 `cursorOperationsMap` in index.js
 
+## Faster getOps behaviour
+
+For data consistency reasons, calling `getOps` actually fetches all ops up to the
+most recent version, even if you only ask for a subset of ops. This can have a
+performance impact on fetching ops for documents with a large number of ops.
+
+If you need faster performance of `getOps`, you can initialise `sharedb-mongo`
+with the option `fasterGetOps: true`.
+
+Setting this flag will use an alternative method that is much faster than the
+default method, but may behave incorrectly in corner cases where ops or snapshots
+have been manipulated outside of ShareDB (eg by setting a TTL on ops, or manually
+updating them, etc.).
+
 ## Error codes
 
 Mongo errors are passed back directly. Additional error codes:

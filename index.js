@@ -44,6 +44,22 @@ function ShareDbMongo(mongo, options) {
   // data in the mongo database.
   this.allowAggregateQueries = options.allowAllQueries || options.allowAggregateQueries || false;
 
+  // By default, when calling fetchOps, sharedb-mongo fetchas *all* ops, even
+  // if you're only requesting a subset. This is because sharedb-mongo uses
+  // optimistic locking. Since ops are committed before the snapshot, we can
+  // sometimes have op collisions where there are multiple ops with the same
+  // document ID and version number. In order to fetch the set of correct ops,
+  // we look at the current snapshot and then use the op the snapshot references.
+  // We look back at each referenced op to get a chain of valid ops.
+  // However, this approach requires fetching all the ops to present, even if
+  // you just want a subset.
+  // Enabling this fasterGetOps flag will use an alternative method that
+  // tries to find the first available unique op and work back from that,
+  // avoiding the need to fetch all ops. However, this may have some implications
+  // on the validity of the returned ops, especially if some of the ops have
+  // been changed outside of sharedb-mongo (eg by setting a TTL on ops).
+  this.fasterGetOps = options.fasterGetOps || false;
+
   // Track whether the close method has been called
   this.closed = false;
 
@@ -361,7 +377,7 @@ ShareDbMongo.prototype.getOps = function(collectionName, id, from, to, options, 
       }
       var err = opLink && checkDocHasOp(collectionName, id, opLink);
       if (err) return callback(err);
-      fetchOpsTo = opLink._v;
+      if (self.fasterGetOps) fetchOpsTo = opLink._v;
     }
     self._getOps(collectionName, id, from, fetchOpsTo, options, function(err, ops) {
       if (err) return callback(err);
@@ -613,6 +629,8 @@ function readOpsBulk(stream, callback) {
 }
 
 ShareDbMongo.prototype._getOpLink = function(collectionName, id, to, callback) {
+  if (!this.fasterGetOps) return this._getSnapshotOpLink(collectionName, id, callback);
+
   var db = this;
   this.getOpCollection(collectionName, function (error, collection) {
     if (error) return callback(error);
