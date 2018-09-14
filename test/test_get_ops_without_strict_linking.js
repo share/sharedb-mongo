@@ -1,6 +1,6 @@
 var expect = require('expect.js');
 var mongodb = require('mongodb');
-var ShareDbMongo = require('../index');
+var ShareDbMongo = require('..');
 var getQuery = require('sharedb-mingo-memory/get-query');
 var sinon = require('sinon');
 
@@ -18,13 +18,13 @@ function create(callback) {
         });
       });
     },
-    fasterFetchOps: true,
+    getOpsWithoutStrictLinking: true,
   });
 };
 
 require('sharedb/test/db')({create: create, getQuery: getQuery});
 
-describe('fasterFetchOps: true', function () {
+describe('getOpsWithoutStrictLinking: true', function () {
   beforeEach(function (done) {
     var self = this;
     create(function (err, db, mongo) {

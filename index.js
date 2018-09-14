@@ -1,6 +1,7 @@
 var async = require('async');
 var mongodb = require('mongodb');
 var DB = require('sharedb').DB;
+var OpLinkValidator = require('./op-link-validator');
 
 module.exports = ShareDbMongo;
 
@@ -44,21 +45,11 @@ function ShareDbMongo(mongo, options) {
   // data in the mongo database.
   this.allowAggregateQueries = options.allowAllQueries || options.allowAggregateQueries || false;
 
-  // By default, when calling fetchOps, sharedb-mongo fetchas *all* ops, even
-  // if you're only requesting a subset. This is because sharedb-mongo uses
-  // optimistic locking. Since ops are committed before the snapshot, we can
-  // sometimes have op collisions where there are multiple ops with the same
-  // document ID and version number. In order to fetch the set of correct ops,
-  // we look at the current snapshot and then use the op the snapshot references.
-  // We look back at each referenced op to get a chain of valid ops.
-  // However, this approach requires fetching all the ops to present, even if
-  // you just want a subset.
-  // Enabling this fasterGetOps flag will use an alternative method that
-  // tries to find the first available unique op and work back from that,
-  // avoiding the need to fetch all ops. However, this may have some implications
-  // on the validity of the returned ops, especially if some of the ops have
-  // been changed outside of sharedb-mongo (eg by setting a TTL on ops).
-  this.fasterGetOps = options.fasterGetOps || false;
+  // Setting this flag to true will attempt to infer a canonical op link for
+  // getOps rather than using the snapshot as the op link. This allows us to
+  // not fetch all ops to present when asking only for a subset.
+  // For more details on this, see the README.
+  this.getOpsWithoutStrictLinking = options.getOpsWithoutStrictLinking || false;
 
   // Track whether the close method has been called
   this.closed = false;
@@ -355,7 +346,8 @@ ShareDbMongo.prototype.getOpsToSnapshot = function(collectionName, id, from, sna
     var err = ShareDbMongo.missingLastOperationError(collectionName, id);
     return callback(err);
   }
-  this._getOps(collectionName, id, from, null, options, function(err, ops) {
+  var to = null;
+  this._getOps(collectionName, id, from, to, options, function(err, ops) {
     if (err) return callback(err);
     var filtered = getLinkedOps(ops, null, snapshot._opLink);
     var err = checkOpsFrom(collectionName, id, filtered, from);
@@ -377,7 +369,7 @@ ShareDbMongo.prototype.getOps = function(collectionName, id, from, to, options, 
       }
       var err = opLink && checkDocHasOp(collectionName, id, opLink);
       if (err) return callback(err);
-      if (self.fasterGetOps) fetchOpsTo = opLink._v;
+      if (self.getOpsWithoutStrictLinking) fetchOpsTo = opLink._v;
     }
     self._getOps(collectionName, id, from, fetchOpsTo, options, function(err, ops) {
       if (err) return callback(err);
@@ -629,11 +621,17 @@ function readOpsBulk(stream, callback) {
 }
 
 ShareDbMongo.prototype._getOpLink = function(collectionName, id, to, callback) {
-  if (!this.fasterGetOps) return this._getSnapshotOpLink(collectionName, id, callback);
+  if (!this.getOpsWithoutStrictLinking) return this._getSnapshotOpLink(collectionName, id, callback);
 
   var db = this;
   this.getOpCollection(collectionName, function (error, collection) {
     if (error) return callback(error);
+
+    // If to is null, we want the most recent version, so just return the
+    // snapshot link, which is more efficient than cursoring
+    if (to == null) {
+      return db._getSnapshotOpLink(collectionName, id, callback);
+    }
 
     var query = {
       d: id,
@@ -648,7 +646,7 @@ ShareDbMongo.prototype._getOpLink = function(collectionName, id, to, callback) {
 
     var cursor = collection.find(query).sort({ v: 1 }).project(projection);
 
-    getFirstOpWithUniqueVersion(cursor, function (error, op) {
+    getFirstOpWithUniqueVersion(cursor, null, function (error, op) {
       if (error) return callback(error);
       if (op) return callback(null, { _o: op.o, _v: op.v });
 
@@ -663,56 +661,33 @@ ShareDbMongo.prototype._getOpLink = function(collectionName, id, to, callback) {
 // but its application to the snapshot is subsequently rejected. This can leave multiple ops
 // with the same values for 'd' and 'v', and means that we may return multiple ops for a single
 // version if we just perform a naive 'find' operation.
-// To avoid this, we try to fetch the first op after 'to' which has a unique 'v', and then we
+// To avoid this, we try to fetch the first op from 'to' which has a unique 'v', and then we
 // work backwards from that op using the linked op 'o' field to get a valid chain of ops.
-function getFirstOpWithUniqueVersion(cursor, ops, callback) {
-  if (typeof ops === 'function') {
-    callback = ops;
-    ops = [];
+// See the README for more details.
+function getFirstOpWithUniqueVersion(cursor, opLinkValidator, callback) {
+  opLinkValidator = opLinkValidator || new OpLinkValidator();
+
+  var opWithUniqueVersion = opLinkValidator.opWithUniqueVersion();
+
+  if (opWithUniqueVersion || opLinkValidator.isAtEndOfList()) {
+    var error = null;
+    return closeCursor(cursor, callback, error, opWithUniqueVersion);
   }
 
-  // We have to look back at the last 3 ops to determine if the version in the middle was
-  // unique. For example, if we get 1 -> 2 -> 3 then we know that v2 is unique (and we can't
-  // make the same assumption about v3, because the next op we fetch might also be v3).
-  var currentOp = ops[ops.length - 1]
-  var previousOp = ops[ops.length - 2];
-  var oneBeforePreviousOp = ops[ops.length - 3];
-
-  var currentVersion = currentOp && currentOp.v;
-  var previousVersion = previousOp && previousOp.v;
-  var oneBeforePreviousVersion = oneBeforePreviousOp && oneBeforePreviousOp.v;
-
-  var previousVersionWasUnique = typeof previousVersion === 'number'
-    && previousVersion !== currentVersion
-    && previousVersion !== oneBeforePreviousVersion;
-
-  if (previousVersionWasUnique) {
-    return cursor.close(function (error) {
-      callback(error, previousOp);
-    });
-  }
-
-  cursor.hasNext(function (error, hasNext) {
-    if (error) return callback(error);
-
-    if (hasNext) {
-      cursor.next(function (error, op) {
-        if (error) return callback(error);
-        ops.push(op);
-        getFirstOpWithUniqueVersion(cursor, ops, callback);
-      });
-    } else {
-      // If there's no next op to fetch, then we now know the current version is unique so
-      // long as it doesn't match the previous version.
-      var currentVersionIsUnique = typeof currentVersion === 'number'
-        && currentVersion !== previousVersion;
-
-      var op = currentVersionIsUnique ? currentOp : null;
-
-      cursor.close(function (error) {
-        callback(error, op);
-      });
+  cursor.next(function (error, op) {
+    if (error) {
+      return closeCursor(cursor, callback, error);
     }
+
+    opLinkValidator.push(op);
+    getFirstOpWithUniqueVersion(cursor, opLinkValidator, callback);
+  });
+}
+
+function closeCursor(cursor, callback, error, returnValue) {
+  cursor.close(function (closeError) {
+    error = error || closeError;
+    callback(error, returnValue);
   });
 }
 
