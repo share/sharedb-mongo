@@ -56,9 +56,11 @@ OpLinkValidator.prototype.isAtEndOfList = function () {
 };
 
 OpLinkValidator.prototype._previousVersionWasUnique = function () {
-  return typeof this._previousVersion() === 'number'
-    && this._previousVersion() !== this._currentVersion()
-    && this._previousVersion() !== this._oneBeforePreviousVersion();
+  const previousVersion = this._previousVersion();
+
+  return typeof previousVersion === 'number'
+    && previousVersion !== this._currentVersion()
+    && previousVersion !== this._oneBeforePreviousVersion();
 };
 
 OpLinkValidator.prototype._currentVersion = function () {
