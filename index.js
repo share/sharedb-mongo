@@ -428,7 +428,7 @@ ShareDbMongo.prototype.getOpsBulk = function(collectionName, fromMap, toMap, opt
   });
 };
 
-DB.prototype.getCommittedOpVersion = function(collectionName, id, snapshot, op, options, callback) {
+ShareDbMongo.prototype.getCommittedOpVersion = function(collectionName, id, snapshot, op, options, callback) {
   var self = this;
   this.getOpCollection(collectionName, function(err, opCollection) {
     if (err) return callback(err);
