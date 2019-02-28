@@ -244,6 +244,26 @@ Mongo errors are passed back directly. Additional error codes:
 * 5103 -- Missing ops from requested version
 * 5104 -- Failed to parse query
 
+## Running tests
+
+This is a database adapter for ShareDB, so all tests in this repo are
+integration tests, requiring a running database. You can run one using Docker.
+
+```shell
+# In one terminal, run a Docker container for Mongo on port 27107.
+# The `--rm` means the container cleans itself up after being stopped.
+
+docker run --rm -p 27017:27017 mongo:latest
+
+# In another terminal, run the integration tests:
+
+npm test
+
+# Ctrl+C to stop the Docker container after you're done with it.
+```
+
+In place of the `latest` tag, you can use a specific version tag like `4.0`.
+See available tags here: https://hub.docker.com/_/mongo#shared-tags
 
 ## MIT License
 Copyright (c) 2015 by Joseph Gentle and Nate Smith
