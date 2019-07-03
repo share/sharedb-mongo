@@ -1372,13 +1372,15 @@ var collectionOperationsMap = {
       if (Array.isArray(resultsOrCursor)) {
         // 2.x Mongo driver directly produces a results array:
         // https://mongodb.github.io/node-mongodb-native/2.2/api/Collection.html#aggregate
-        cb(null, resultsOrCursor);
+        var resultsArray = resultsOrCursor;
+        cb(null, resultsArray);
       } else {
         // 3.x Mongo driver produces an AggregationCursor:
         // https://mongodb.github.io/node-mongodb-native/3.0/api/Collection.html#aggregate
         //
         // ShareDB expects serializable result data, so use `Cursor#toArray` for that.
-        resultsOrCursor.toArray(cb);
+        var cursor = resultsOrCursor;
+        cursor.toArray(cb);
       }
     });
   },
