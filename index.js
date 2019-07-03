@@ -1447,7 +1447,7 @@ var cursorTransformsMap = {
 ShareDbMongo.invalidOpVersionError = function(collectionName, id, v) {
   return {
     code: 4101,
-    message: 'Invalid op version ' + collectionName + '.' + id + ' ' + op.v
+    message: 'Invalid op version ' + collectionName + '.' + id + ' ' + v
   };
 };
 ShareDbMongo.invalidCollectionError = function(collectionName) {
