@@ -1365,7 +1365,24 @@ var collectionOperationsMap = {
     collection.distinct(value.field, query, cb);
   },
   '$aggregate': function(collection, query, value, cb) {
-    collection.aggregate(value, cb);
+    collection.aggregate(value, function(err, resultsOrCursor) {
+      if (err) {
+        return cb(err);
+      }
+      if (Array.isArray(resultsOrCursor)) {
+        // 2.x Mongo driver directly produces a results array:
+        // https://mongodb.github.io/node-mongodb-native/2.2/api/Collection.html#aggregate
+        var resultsArray = resultsOrCursor;
+        cb(null, resultsArray);
+      } else {
+        // 3.x Mongo driver produces an AggregationCursor:
+        // https://mongodb.github.io/node-mongodb-native/3.0/api/Collection.html#aggregate
+        //
+        // ShareDB expects serializable result data, so use `Cursor#toArray` for that.
+        var cursor = resultsOrCursor;
+        cursor.toArray(cb);
+      }
+    });
   },
   '$mapReduce': function(collection, query, value, cb) {
     if (typeof value !== 'object') {
