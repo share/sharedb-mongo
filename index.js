@@ -1,6 +1,7 @@
 var async = require('async');
 var mongodb = require('mongodb');
 var DB = require('sharedb').DB;
+var OpLinkValidator = require('./op-link-validator');
 
 module.exports = ShareDbMongo;
 
@@ -43,6 +44,12 @@ function ShareDbMongo(mongo, options) {
   // Aggregate queries are less dangerous, but you can use them to access any
   // data in the mongo database.
   this.allowAggregateQueries = options.allowAllQueries || options.allowAggregateQueries || false;
+
+  // Setting this flag to true will attempt to infer a canonical op link for
+  // getOps rather than using the snapshot as the op link. This allows us to
+  // not fetch all ops to present when asking only for a subset.
+  // For more details on this, see the README.
+  this.getOpsWithoutStrictLinking = options.getOpsWithoutStrictLinking || false;
 
   // Track whether the close method has been called
   this.closed = false;
@@ -339,7 +346,8 @@ ShareDbMongo.prototype.getOpsToSnapshot = function(collectionName, id, from, sna
     var err = ShareDbMongo.missingLastOperationError(collectionName, id);
     return callback(err);
   }
-  this._getOps(collectionName, id, from, options, function(err, ops) {
+  var to = null;
+  this._getOps(collectionName, id, from, to, options, function(err, ops) {
     if (err) return callback(err);
     var filtered = getLinkedOps(ops, null, snapshot._opLink);
     var err = checkOpsFrom(collectionName, id, filtered, from);
@@ -350,18 +358,22 @@ ShareDbMongo.prototype.getOpsToSnapshot = function(collectionName, id, from, sna
 
 ShareDbMongo.prototype.getOps = function(collectionName, id, from, to, options, callback) {
   var self = this;
-  this._getSnapshotOpLink(collectionName, id, function(err, doc) {
+  this._getOpLink(collectionName, id, to, function(err, opLink) {
     if (err) return callback(err);
-    if (doc) {
-      if (isCurrentVersion(doc, from)) {
+    // We need to fetch slightly more ops than requested in order to work backwards along
+    // linked ops to provide only valid ops
+    var fetchOpsTo = null;
+    if (opLink) {
+      if (isCurrentVersion(opLink, from)) {
         return callback(null, []);
       }
-      var err = doc && checkDocHasOp(collectionName, id, doc);
+      var err = opLink && checkDocHasOp(collectionName, id, opLink);
       if (err) return callback(err);
+      if (self.getOpsWithoutStrictLinking) fetchOpsTo = opLink._v;
     }
-    self._getOps(collectionName, id, from, options, function(err, ops) {
+    self._getOps(collectionName, id, from, fetchOpsTo, options, function(err, ops) {
       if (err) return callback(err);
-      var filtered = filterOps(ops, doc, to);
+      var filtered = filterOps(ops, opLink, to);
       var err = checkOpsFrom(collectionName, id, filtered, from);
       if (err) return callback(err);
       callback(null, filtered);
@@ -416,7 +428,7 @@ ShareDbMongo.prototype.getOpsBulk = function(collectionName, fromMap, toMap, opt
   });
 };
 
-DB.prototype.getCommittedOpVersion = function(collectionName, id, snapshot, op, options, callback) {
+ShareDbMongo.prototype.getCommittedOpVersion = function(collectionName, id, snapshot, op, options, callback) {
   var self = this;
   this.getOpCollection(collectionName, function(err, opCollection) {
     if (err) return callback(err);
@@ -534,22 +546,30 @@ function getLinkedOps(ops, to, link) {
     if (to == null || op.v < to) {
       delete op._id;
       delete op.o;
-      linkedOps.unshift(op);
+      linkedOps.push(op);
     }
   }
-  return linkedOps;
+  return linkedOps.reverse();
 }
 
-function getOpsQuery(id, from) {
-  return (from == null) ?
-    {d: id} :
-    {d: id, v: {$gte: from}};
+function getOpsQuery(id, from, to) {
+  from = from == null ? 0 : from;
+  var query = {
+    d: id,
+    v: { $gte: from }
+  };
+
+  if (to != null) {
+    query.v.$lt = to;
+  }
+
+  return query;
 }
 
-ShareDbMongo.prototype._getOps = function(collectionName, id, from, options, callback) {
+ShareDbMongo.prototype._getOps = function(collectionName, id, from, to, options, callback) {
   this.getOpCollection(collectionName, function(err, opCollection) {
     if (err) return callback(err);
-    var query = getOpsQuery(id, from);
+    var query = getOpsQuery(id, from, to);
     // Exclude the `d` field, which is only for use internal to livedb-mongo.
     // Also exclude the `m` field, which can be used to store metadata on ops
     // for tracking purposes
@@ -597,6 +617,77 @@ function readOpsBulk(stream, callback) {
       opsMap[id] = [op];
     }
     delete op.d;
+  });
+}
+
+ShareDbMongo.prototype._getOpLink = function(collectionName, id, to, callback) {
+  if (!this.getOpsWithoutStrictLinking) return this._getSnapshotOpLink(collectionName, id, callback);
+
+  var db = this;
+  this.getOpCollection(collectionName, function (error, collection) {
+    if (error) return callback(error);
+
+    // If to is null, we want the most recent version, so just return the
+    // snapshot link, which is more efficient than cursoring
+    if (to == null) {
+      return db._getSnapshotOpLink(collectionName, id, callback);
+    }
+
+    var query = {
+      d: id,
+      v: { $gte: to }
+    };
+
+    var projection = {
+      _id: 0,
+      v: 1,
+      o: 1
+    };
+
+    var cursor = collection.find(query).sort({ v: 1 }).project(projection);
+
+    getFirstOpWithUniqueVersion(cursor, null, function (error, op) {
+      if (error) return callback(error);
+      if (op) return callback(null, { _o: op.o, _v: op.v });
+
+      // If we couldn't find an op to link back from, then fall back to using the current
+      // snapshot, which is guaranteed to have a link to a valid op.
+      db._getSnapshotOpLink(collectionName, id, callback);
+    });
+  });
+};
+
+// When getting ops, we need to consider the case where an op is committed to the database,
+// but its application to the snapshot is subsequently rejected. This can leave multiple ops
+// with the same values for 'd' and 'v', and means that we may return multiple ops for a single
+// version if we just perform a naive 'find' operation.
+// To avoid this, we try to fetch the first op from 'to' which has a unique 'v', and then we
+// work backwards from that op using the linked op 'o' field to get a valid chain of ops.
+// See the README for more details.
+function getFirstOpWithUniqueVersion(cursor, opLinkValidator, callback) {
+  opLinkValidator = opLinkValidator || new OpLinkValidator();
+
+  var opWithUniqueVersion = opLinkValidator.opWithUniqueVersion();
+
+  if (opWithUniqueVersion || opLinkValidator.isAtEndOfList()) {
+    var error = null;
+    return closeCursor(cursor, callback, error, opWithUniqueVersion);
+  }
+
+  cursor.next(function (error, op) {
+    if (error) {
+      return closeCursor(cursor, callback, error);
+    }
+
+    opLinkValidator.push(op);
+    getFirstOpWithUniqueVersion(cursor, opLinkValidator, callback);
+  });
+}
+
+function closeCursor(cursor, callback, error, returnValue) {
+  cursor.close(function (closeError) {
+    error = error || closeError;
+    callback(error, returnValue);
   });
 }
 
@@ -1221,7 +1312,7 @@ function MongoSnapshot(id, version, type, data, meta, opLink) {
   this.v = version;
   this.type = type;
   this.data = data;
-  if (meta) this.m = meta;
+  this.m = meta == null ? null : meta;
   if (opLink) this._opLink = opLink;
 }
 

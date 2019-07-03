@@ -353,7 +353,7 @@ describe('mongo db connection', function() {
     });
 
     it('commit and query', function(done) {
-      var snapshot = {type: 'json0', v: 1, data: {}, id: "test"};
+      var snapshot = {type: 'json0', v: 1, data: {}, id: "test", m: null};
       var db = this.db;
 
       db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, null, function(err) {
