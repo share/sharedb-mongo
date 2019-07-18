@@ -37,17 +37,17 @@ function OpLinkValidator() {
   this.oneBeforePreviousOp = undefined;
 }
 
-OpLinkValidator.prototype.push = function (op) {
+OpLinkValidator.prototype.push = function(op) {
   this.oneBeforePreviousOp = this.previousOp;
   this.previousOp = this.currentOp;
   this.currentOp = op;
 };
 
-OpLinkValidator.prototype.opWithUniqueVersion = function () {
+OpLinkValidator.prototype.opWithUniqueVersion = function() {
   return this._previousVersionWasUnique() ? this.previousOp : null;
 };
 
-OpLinkValidator.prototype.isAtEndOfList = function () {
+OpLinkValidator.prototype.isAtEndOfList = function() {
   // We ascribe a special meaning to a current op of null
   // being that we're at the end of the list, because this
   // is the value that the Mongo cursor will return when
@@ -55,23 +55,23 @@ OpLinkValidator.prototype.isAtEndOfList = function () {
   return this.currentOp === null;
 };
 
-OpLinkValidator.prototype._previousVersionWasUnique = function () {
-  const previousVersion = this._previousVersion();
+OpLinkValidator.prototype._previousVersionWasUnique = function() {
+  var previousVersion = this._previousVersion();
 
   return typeof previousVersion === 'number'
     && previousVersion !== this._currentVersion()
     && previousVersion !== this._oneBeforePreviousVersion();
 };
 
-OpLinkValidator.prototype._currentVersion = function () {
+OpLinkValidator.prototype._currentVersion = function() {
   return this.currentOp && this.currentOp.v;
 };
 
-OpLinkValidator.prototype._previousVersion = function () {
+OpLinkValidator.prototype._previousVersion = function() {
   return this.previousOp && this.previousOp.v;
 };
 
-OpLinkValidator.prototype._oneBeforePreviousVersion = function () {
+OpLinkValidator.prototype._oneBeforePreviousVersion = function() {
   return this.oneBeforePreviousOp && this.oneBeforePreviousOp.v;
 };
 

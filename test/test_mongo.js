@@ -6,7 +6,7 @@ var getQuery = require('sharedb-mingo-memory/get-query');
 var mongoUrl = process.env.TEST_MONGO_URL || 'mongodb://localhost:27017/test';
 
 function create(callback) {
-  var db = ShareDbMongo({mongo: function(shareDbCallback) {
+  var db = new ShareDbMongo({mongo: function(shareDbCallback) {
     mongodb.connect(mongoUrl, function(err, mongo) {
       if (err) return callback(err);
       mongo.dropDatabase(function(err) {
@@ -46,7 +46,7 @@ describe('mongo db', function() {
           expect(indexes['d_1_v_1']).ok();
           // Index for checking committed op(s) by src and seq
           expect(indexes['src_1_seq_1_v_1']).ok();
-          done()
+          done();
         });
       });
     });
@@ -55,9 +55,9 @@ describe('mongo db', function() {
       var db = this.db;
       this.mongo.collection('testcollection').createIndex({x: 1}, {unique: true}, function(err) {
         if (err) return done(err);
-        db.commit('testcollection', 'foo', {v: 0, create: {}}, {v: 1, data: {x: 7}}, null, function(err, succeeded) {
+        db.commit('testcollection', 'foo', {v: 0, create: {}}, {v: 1, data: {x: 7}}, null, function(err) {
           if (err) return done(err);
-          db.commit('testcollection', 'bar', {v: 0, create: {}}, {v: 1, data: {x: 7}}, null, function(err, succeeded) {
+          db.commit('testcollection', 'bar', {v: 0, create: {}}, {v: 1, data: {x: 7}}, null, function(err) {
             expect(err && err.code).equal(11000);
             done();
           });
@@ -84,7 +84,7 @@ describe('mongo db', function() {
     require('sharedb-mingo-memory/test/query')();
 
     it('does not allow $where queries', function(done) {
-      this.db.query('testcollection', {$where: 'true'}, null, null, function(err, results) {
+      this.db.query('testcollection', {$where: 'true'}, null, null, function(err) {
         expect(err).ok();
         done();
       });
@@ -154,8 +154,8 @@ describe('mongo db', function() {
       });
     });
 
-    describe('queryPollDoc correctly filters on _id', function(done) {
-      var snapshot = {type: 'json0', v: 1, data: {}, id: "test"};
+    describe('queryPollDoc correctly filters on _id', function() {
+      var snapshot = {type: 'json0', v: 1, data: {}, id: 'test'};
 
       beforeEach(function(done) {
         this.db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, null, done);
@@ -251,10 +251,10 @@ describe('mongo db', function() {
 
     it('does not let you run $aggregate queries without options.allowAggregateQueries', function(done) {
       var query = {$aggregate: [
-        {$group: {_id: '$y',count: {$sum: 1}}},
+        {$group: {_id: '$y', count: {$sum: 1}}},
         {$sort: {count: 1}}
       ]};
-      this.db.query('testcollection', query, null, null, function(err, results) {
+      this.db.query('testcollection', query, null, null, function(err) {
         expect(err).ok();
         done();
       });
@@ -335,11 +335,11 @@ describe('mongo db', function() {
 describe('mongo db connection', function() {
   describe('via url string', function() {
     beforeEach(function(done) {
-      this.db = ShareDbMongo({mongo: mongoUrl});
+      this.db = new ShareDbMongo({mongo: mongoUrl});
 
       // This will enqueue the callback, testing the 'pendingConnect'
       // logic.
-      this.db.getDbs(function(err, mongo, mongoPoll) {
+      this.db.getDbs(function(err, mongo) {
         if (err) return done(err);
         mongo.dropDatabase(function(err) {
           if (err) return done(err);
@@ -353,7 +353,7 @@ describe('mongo db connection', function() {
     });
 
     it('commit and query', function(done) {
-      var snapshot = {type: 'json0', v: 1, data: {}, id: "test", m: null};
+      var snapshot = {type: 'json0', v: 1, data: {}, id: 'test', m: null};
       var db = this.db;
 
       db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, null, function(err) {
@@ -370,7 +370,7 @@ describe('mongo db connection', function() {
   describe('via url string with mongoPoll and pollDelay option', function() {
     beforeEach(function(done) {
       this.pollDelay = 1000;
-      this.db = ShareDbMongo({mongo: mongoUrl, mongoPoll: mongoUrl, pollDelay: this.pollDelay});
+      this.db = new ShareDbMongo({mongo: mongoUrl, mongoPoll: mongoUrl, pollDelay: this.pollDelay});
       done();
     });
 
@@ -382,7 +382,7 @@ describe('mongo db connection', function() {
       var db = this.db;
       var pollDelay = this.pollDelay;
 
-      var snapshot = {type: 'json0', v: 1, data: {}, id: "test"};
+      var snapshot = {type: 'json0', v: 1, data: {}, id: 'test'};
       var timeBeforeCommit = new Date;
       db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, null, function(err) {
         if (err) return done(err);
@@ -482,7 +482,7 @@ describe('parse query', function() {
       doesNotModify({foo: {$in: [1, 2, 3]}});
       addsType({foo: {$in: [null, 2, 3]}});
       doesNotModify({foo: {$in: [null, 2, 3]}, bar: 1});
-    })
+    });
 
     it('top-level $and', function() {
       doesNotModify({$and: [{foo: {$ne: null}}, {bar: {$ne: null}}]});

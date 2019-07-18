@@ -10,6 +10,8 @@
   },
   "devDependencies": {
     "coveralls": "^2.11.8",
+    "eslint": "^5.16.0",
+    "eslint-config-google": "^0.13.0",
     "expect.js": "^0.3.1",
     "istanbul": "^0.4.2",
     "mocha": "^2.3.3",
@@ -17,8 +19,10 @@
     "sinon": "^6.1.5"
   },
   "scripts": {
-    "test": "node_modules/.bin/mocha",
-    "test-cover": "node_modules/istanbul/lib/cli.js cover node_modules/mocha/bin/_mocha"
+    "lint": "./node_modules/.bin/eslint --ignore-path .gitignore '**/*.js'",
+    "lint:fix": "npm run lint -- --fix",
+    "test": "npm run lint && node_modules/.bin/mocha",
+    "test-cover": "npm run lint && node_modules/istanbul/lib/cli.js cover node_modules/mocha/bin/_mocha"
   },
   "repository": "git://github.com/share/sharedb-mongo.git",
   "author": "Nate Smith and Joseph Gentle",
