@@ -1,19 +1,19 @@
 var OpLinkValidator = require('../op-link-validator');
 var expect = require('expect.js');
 
-describe('OpLinkValidator', function () {
-  it('starts with no unique op', function () {
+describe('OpLinkValidator', function() {
+  it('starts with no unique op', function() {
     var validator = new OpLinkValidator();
     var opWithUniqueVersion = validator.opWithUniqueVersion();
     expect(opWithUniqueVersion).to.be(null);
   });
 
-  it('starts not at the end of the list', function () {
+  it('starts not at the end of the list', function() {
     var validator = new OpLinkValidator();
     expect(validator.isAtEndOfList()).to.be(false);
   });
 
-  it('has no unique op with just one op', function () {
+  it('has no unique op with just one op', function() {
     var op = {v: 1};
     var validator = new OpLinkValidator();
 
@@ -23,7 +23,7 @@ describe('OpLinkValidator', function () {
     expect(opWithUniqueVersion).to.be(null);
   });
 
-  it('has a unique op with just two different ops', function () {
+  it('has a unique op with just two different ops', function() {
     var op1 = {v: 1};
     var op2 = {v: 2};
     var validator = new OpLinkValidator();
@@ -35,9 +35,9 @@ describe('OpLinkValidator', function () {
     expect(opWithUniqueVersion).to.be(op1);
   });
 
-  it('does not have a uniquye op with just two identical ops', function () {
-    var op1 = { v: 1 };
-    var op2 = { v: 1 };
+  it('does not have a uniquye op with just two identical ops', function() {
+    var op1 = {v: 1};
+    var op2 = {v: 1};
     var validator = new OpLinkValidator();
 
     validator.push(op1);
@@ -47,7 +47,7 @@ describe('OpLinkValidator', function () {
     expect(opWithUniqueVersion).to.be(null);
   });
 
-  it('has a unique op with three ops with different versions', function () {
+  it('has a unique op with three ops with different versions', function() {
     var op1 = {v: 1};
     var op2 = {v: 2};
     var op3 = {v: 3};
@@ -61,10 +61,10 @@ describe('OpLinkValidator', function () {
     expect(opWithUniqueVersion).to.be(op2);
   });
 
-  it('is not at the end of the list with three ops', function () {
-    var op1 = { v: 1 };
-    var op2 = { v: 2 };
-    var op3 = { v: 3 };
+  it('is not at the end of the list with three ops', function() {
+    var op1 = {v: 1};
+    var op2 = {v: 2};
+    var op3 = {v: 3};
     var validator = new OpLinkValidator();
 
     validator.push(op1);
@@ -74,8 +74,8 @@ describe('OpLinkValidator', function () {
     expect(validator.isAtEndOfList()).to.be(false);
   });
 
-  it('does not have a unique op with three ops with the same version', function () {
-    var op = { v: 1 };
+  it('does not have a unique op with three ops with the same version', function() {
+    var op = {v: 1};
     var validator = new OpLinkValidator();
 
     validator.push(op);
@@ -86,24 +86,10 @@ describe('OpLinkValidator', function () {
     expect(opWithUniqueVersion).to.be(null);
   });
 
-  it('does not have a unique op if the first two ops are the same', function () {
-    var op1 = { v: 1 };
-    var op2 = { v: 1 };
-    var op3 = { v: 2 };
-    var validator = new OpLinkValidator();
-
-    validator.push(op1);
-    validator.push(op2);
-    validator.push(op3);
-    var opWithUniqueVersion = validator.opWithUniqueVersion();
-
-    expect(opWithUniqueVersion).to.be(null);
-  });
-
-  it('does not have a unique op if the last two ops are the same', function () {
-    var op1 = { v: 1 };
-    var op2 = { v: 2 };
-    var op3 = { v: 2 };
+  it('does not have a unique op if the first two ops are the same', function() {
+    var op1 = {v: 1};
+    var op2 = {v: 1};
+    var op3 = {v: 2};
     var validator = new OpLinkValidator();
 
     validator.push(op1);
@@ -114,14 +100,28 @@ describe('OpLinkValidator', function () {
     expect(opWithUniqueVersion).to.be(null);
   });
 
-  it('has a unique op in a long chain', function () {
-    var op1 = { v: 1 };
-    var op2 = { v: 1 };
-    var op3 = { v: 1 };
-    var op4 = { v: 2 };
-    var op5 = { v: 2 };
-    var op6 = { v: 3 };
-    var op7 = { v: 4 };
+  it('does not have a unique op if the last two ops are the same', function() {
+    var op1 = {v: 1};
+    var op2 = {v: 2};
+    var op3 = {v: 2};
+    var validator = new OpLinkValidator();
+
+    validator.push(op1);
+    validator.push(op2);
+    validator.push(op3);
+    var opWithUniqueVersion = validator.opWithUniqueVersion();
+
+    expect(opWithUniqueVersion).to.be(null);
+  });
+
+  it('has a unique op in a long chain', function() {
+    var op1 = {v: 1};
+    var op2 = {v: 1};
+    var op3 = {v: 1};
+    var op4 = {v: 2};
+    var op5 = {v: 2};
+    var op6 = {v: 3};
+    var op7 = {v: 4};
     var validator = new OpLinkValidator();
 
     validator.push(op1);
@@ -136,9 +136,9 @@ describe('OpLinkValidator', function () {
     expect(opWithUniqueVersion).to.be(op6);
   });
 
-  it('has a unique op with two ops and a current op of null', function () {
-    var op1 = { v: 1 };
-    var op2 = { v: 2 };
+  it('has a unique op with two ops and a current op of null', function() {
+    var op1 = {v: 1};
+    var op2 = {v: 2};
     var op3 = null;
     var validator = new OpLinkValidator();
 
@@ -150,7 +150,7 @@ describe('OpLinkValidator', function () {
     expect(opWithUniqueVersion).to.be(op2);
   });
 
-  it('is at the end of the list with a current op of null', function () {
+  it('is at the end of the list with a current op of null', function() {
     var op = null;
     var validator = new OpLinkValidator();
     validator.push(op);
