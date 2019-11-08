@@ -1229,7 +1229,7 @@ function MongoSnapshot(id, version, type, data, meta, opLink) {
   this.v = version;
   this.type = type;
   this.data = data;
-  if (meta) this.m = meta;
+  this.m = meta || null;
   if (opLink) this._opLink = opLink;
 }
 

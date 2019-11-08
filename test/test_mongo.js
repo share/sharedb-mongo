@@ -1,4 +1,4 @@
-var expect = require('expect.js');
+var expect = require('chai').expect;
 var mongodb = require('mongodb');
 var ShareDbMongo = require('../index');
 var getQuery = require('sharedb-mingo-memory/get-query');
@@ -43,9 +43,9 @@ describe('mongo db', function() {
         mongo.db().collection('o_testcollection').indexInformation(function(err, indexes) {
           if (err) return done(err);
           // Index for getting document(s) ops
-          expect(indexes['d_1_v_1']).ok();
+          expect(indexes['d_1_v_1']).ok;
           // Index for checking committed op(s) by src and seq
-          expect(indexes['src_1_seq_1_v_1']).ok();
+          expect(indexes['src_1_seq_1_v_1']).ok;
           done()
         });
       });
@@ -70,9 +70,9 @@ describe('mongo db', function() {
     it('does not allow editing the system collection', function(done) {
       var db = this.db;
       db.commit('system', 'test', {v: 0, create: {}}, {}, null, function(err) {
-        expect(err).ok();
+        expect(err).ok;
         db.getSnapshot('system', 'test', null, null, function(err) {
-          expect(err).ok();
+          expect(err).ok;
           done();
         });
       });
@@ -85,21 +85,21 @@ describe('mongo db', function() {
 
     it('does not allow $where queries', function(done) {
       this.db.query('testcollection', {$where: 'true'}, null, null, function(err, results) {
-        expect(err).ok();
+        expect(err).ok;
         done();
       });
     });
 
     it('queryPollDoc does not allow $where queries', function(done) {
       this.db.queryPollDoc('testcollection', 'somedoc', {$where: 'true'}, null, function(err) {
-        expect(err).ok();
+        expect(err).ok;
         done();
       });
     });
 
     it('$query is deprecated', function(done) {
       this.db.query('testcollection', {$query: {}}, null, null, function(err) {
-        expect(err).ok();
+        expect(err).ok;
         expect(err.code).eql(4106);
         done();
       });
@@ -107,7 +107,7 @@ describe('mongo db', function() {
 
     it('only one collection operation allowed', function(done) {
       this.db.query('testcollection', {$distinct: {y: 1}, $aggregate: {}}, null, null, function(err) {
-        expect(err).ok();
+        expect(err).ok;
         expect(err.code).eql(4108);
         done();
       });
@@ -115,7 +115,7 @@ describe('mongo db', function() {
 
     it('only one cursor operation allowed', function(done) {
       this.db.query('testcollection', {$count: true, $explain: true}, null, null, function(err) {
-        expect(err).ok();
+        expect(err).ok;
         expect(err.code).eql(4109);
         done();
       });
@@ -123,7 +123,7 @@ describe('mongo db', function() {
 
     it('cursor transform can\'t run after collection operation', function(done) {
       this.db.query('testcollection', {$distinct: {y: 1}, $sort: {y: 1}}, null, null, function(err) {
-        expect(err).ok();
+        expect(err).ok;
         expect(err.code).eql(4110);
         done();
       });
@@ -131,7 +131,7 @@ describe('mongo db', function() {
 
     it('cursor operation can\'t run after collection operation', function(done) {
       this.db.query('testcollection', {$distinct: {y: 1}, $count: true}, null, null, function(err) {
-        expect(err).ok();
+        expect(err).ok;
         expect(err.code).eql(4110);
         done();
       });
@@ -139,7 +139,7 @@ describe('mongo db', function() {
 
     it('non-object $readPref should return error', function(done) {
       this.db.query('testcollection', {$readPref: true}, null, null, function(err) {
-        expect(err).ok();
+        expect(err).ok;
         expect(err.code).eql(4107);
         done();
       });
@@ -148,7 +148,7 @@ describe('mongo db', function() {
     it('malformed $mapReduce should return error', function(done) {
       this.db.allowJSQueries = true; // required for $mapReduce
       this.db.query('testcollection', {$mapReduce: true}, null, null, function(err) {
-        expect(err).ok();
+        expect(err).ok;
         expect(err.code).eql(4107);
         done();
       });
@@ -255,7 +255,7 @@ describe('mongo db', function() {
         {$sort: {count: 1}}
       ]};
       this.db.query('testcollection', query, null, null, function(err, results) {
-        expect(err).ok();
+        expect(err).ok;
         done();
       });
     });
@@ -286,7 +286,7 @@ describe('mongo db', function() {
               }
             };
             db.query('testcollection', query, null, null, function(err) {
-              expect(err).ok();
+              expect(err).ok;
               done();
             });
           });
@@ -353,7 +353,7 @@ describe('mongo db connection', function() {
     });
 
     it('commit and query', function(done) {
-      var snapshot = {type: 'json0', v: 1, data: {}, id: "test"};
+      var snapshot = {type: 'json0', v: 1, data: {}, m: null, id: "test"};
       var db = this.db;
 
       db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, null, function(err) {
