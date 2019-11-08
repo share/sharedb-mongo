@@ -1275,15 +1275,8 @@ var collectionOperationsMap = {
   },
   '$aggregate': function(collection, query, value, cb) {
     collection.aggregate(value, function(err, cursor) {
-      if(err) {
-        return cb(err);
-      }
-      cursor.toArray(function (err, res) {
-        if(err) {
-          return cb(err);
-        }
-        return cb(null, res);
-      });
+      if (err) return cb(err);
+      cursor.toArray(cb);
     });
   },
   '$mapReduce': function(collection, query, value, cb) {
