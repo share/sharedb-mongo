@@ -1,6 +1,5 @@
 var expect = require('chai').expect;
 var ShareDbMongo = require('../index');
-var checkOp = require('sharedb/lib/ot').checkOp;
 
 describe('skipPoll', function() {
   // Run a test function against a small sample set of queries
@@ -8,7 +7,7 @@ describe('skipPoll', function() {
     function testInNewCase(query) {
       it(JSON.stringify(query), function() {
         test(query);
-      })
+      });
     };
 
     testInNewCase({a: 1});
@@ -129,8 +128,12 @@ function assertIfSkips(rawOp, query, expectedSkips) {
   expect(actualSkips).eql(expectedSkips);
 }
 
-function assertSkips(rawOp, query) { assertIfSkips(rawOp, query, true); };
-function assertNotSkips(rawOp, query) { assertIfSkips(rawOp, query, false); };
+function assertSkips(rawOp, query) {
+  assertIfSkips(rawOp, query, true);
+};
+function assertNotSkips(rawOp, query) {
+  assertIfSkips(rawOp, query, false);
+};
 
 function has(haystack, needle) {
   return haystack.indexOf(needle) !== -1;

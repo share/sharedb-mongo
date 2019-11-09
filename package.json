@@ -1,27 +1,32 @@
 {
   "name": "sharedb-mongo",
-  "version": "1.0.0-beta.4",
+  "version": "1.0.0-beta.9",
   "description": "MongoDB database adapter for ShareDB",
   "main": "index.js",
   "dependencies": {
     "async": "^1.5.2"
   },
   "peerDependencies": {
-    "mongodb": "^3.3.3",
+    "mongodb": "^3.0.0",
     "sharedb": "^1.0.0-beta"
   },
   "devDependencies": {
     "chai": "^4.2.0",
     "coveralls": "^3.0.7",
-    "nyc": "^14.1.1",
+    "eslint": "^5.16.0",
+    "eslint-config-google": "^0.13.0",
     "mocha": "^6.2.2",
     "mongodb": "^3.3.3",
+    "nyc": "^14.1.1",
     "sharedb": "^1.0.0-beta",
-    "sharedb-mingo-memory": "^1.1.1"
+    "sharedb-mingo-memory": "^1.1.1",
+    "sinon": "^6.1.5"
   },
   "scripts": {
-    "test": "node_modules/.bin/mocha",
-    "test-cover": "node_modules/nyc/bin/nyc.js --temp-dir=coverage -r text -r lcov node_modules/mocha/bin/_mocha"
+    "lint": "./node_modules/.bin/eslint --ignore-path .gitignore '**/*.js'",
+    "lint:fix": "npm run lint -- --fix",
+    "test": "npm run lint && node_modules/.bin/mocha",
+    "test-cover": "npm run lint && node_modules/nyc/bin/nyc.js --temp-dir=coverage -r text -r lcov node_modules/mocha/bin/_mocha"
   },
   "repository": "git://github.com/share/sharedb-mongo.git",
   "author": "Nate Smith and Joseph Gentle",
