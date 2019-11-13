@@ -25,7 +25,7 @@ together with snapshots.
 
 ## Usage
 
-`sharedb-mongo` wraps native [mongodb](https://github.com/mongodb/node-mongodb-native), and it supports the same configuration options.
+`sharedb-mongo` uses the [MongoDB NodeJS Driver](https://github.com/mongodb/node-mongodb-native), and it supports the same configuration options.
 
 There are two ways to instantiate a sharedb-mongo wrapper:
 
@@ -33,7 +33,7 @@ There are two ways to instantiate a sharedb-mongo wrapper:
 arguments as arguments to the module function. For example:
 
     ```javascript
-    const db = require('sharedb-mongo')('mongodb://localhost:27017/test');
+    const db = require('sharedb-mongo')('mongodb://localhost:27017/test', {mongoOptions: {...}});
     const backend = new ShareDB({db});
     ```
 
