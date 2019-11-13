@@ -1,16 +1,16 @@
 var OpLinkValidator = require('../op-link-validator');
-var expect = require('expect.js');
+var expect = require('chai').expect;
 
 describe('OpLinkValidator', function() {
   it('starts with no unique op', function() {
     var validator = new OpLinkValidator();
     var opWithUniqueVersion = validator.opWithUniqueVersion();
-    expect(opWithUniqueVersion).to.be(null);
+    expect(opWithUniqueVersion).to.equal(null);
   });
 
   it('starts not at the end of the list', function() {
     var validator = new OpLinkValidator();
-    expect(validator.isAtEndOfList()).to.be(false);
+    expect(validator.isAtEndOfList()).to.equal(false);
   });
 
   it('has no unique op with just one op', function() {
@@ -20,7 +20,7 @@ describe('OpLinkValidator', function() {
     validator.push(op);
     var opWithUniqueVersion = validator.opWithUniqueVersion();
 
-    expect(opWithUniqueVersion).to.be(null);
+    expect(opWithUniqueVersion).to.equal(null);
   });
 
   it('has a unique op with just two different ops', function() {
@@ -32,7 +32,7 @@ describe('OpLinkValidator', function() {
     validator.push(op2);
     var opWithUniqueVersion = validator.opWithUniqueVersion();
 
-    expect(opWithUniqueVersion).to.be(op1);
+    expect(opWithUniqueVersion).to.equal(op1);
   });
 
   it('does not have a uniquye op with just two identical ops', function() {
@@ -44,7 +44,7 @@ describe('OpLinkValidator', function() {
     validator.push(op2);
     var opWithUniqueVersion = validator.opWithUniqueVersion();
 
-    expect(opWithUniqueVersion).to.be(null);
+    expect(opWithUniqueVersion).to.equal(null);
   });
 
   it('has a unique op with three ops with different versions', function() {
@@ -58,7 +58,7 @@ describe('OpLinkValidator', function() {
     validator.push(op3);
     var opWithUniqueVersion = validator.opWithUniqueVersion();
 
-    expect(opWithUniqueVersion).to.be(op2);
+    expect(opWithUniqueVersion).to.equal(op2);
   });
 
   it('is not at the end of the list with three ops', function() {
@@ -71,7 +71,7 @@ describe('OpLinkValidator', function() {
     validator.push(op2);
     validator.push(op3);
 
-    expect(validator.isAtEndOfList()).to.be(false);
+    expect(validator.isAtEndOfList()).to.equal(false);
   });
 
   it('does not have a unique op with three ops with the same version', function() {
@@ -83,7 +83,7 @@ describe('OpLinkValidator', function() {
     validator.push(op);
     var opWithUniqueVersion = validator.opWithUniqueVersion();
 
-    expect(opWithUniqueVersion).to.be(null);
+    expect(opWithUniqueVersion).to.equal(null);
   });
 
   it('does not have a unique op if the first two ops are the same', function() {
@@ -97,7 +97,7 @@ describe('OpLinkValidator', function() {
     validator.push(op3);
     var opWithUniqueVersion = validator.opWithUniqueVersion();
 
-    expect(opWithUniqueVersion).to.be(null);
+    expect(opWithUniqueVersion).to.equal(null);
   });
 
   it('does not have a unique op if the last two ops are the same', function() {
@@ -111,7 +111,7 @@ describe('OpLinkValidator', function() {
     validator.push(op3);
     var opWithUniqueVersion = validator.opWithUniqueVersion();
 
-    expect(opWithUniqueVersion).to.be(null);
+    expect(opWithUniqueVersion).to.equal(null);
   });
 
   it('has a unique op in a long chain', function() {
@@ -133,7 +133,7 @@ describe('OpLinkValidator', function() {
     validator.push(op7);
     var opWithUniqueVersion = validator.opWithUniqueVersion();
 
-    expect(opWithUniqueVersion).to.be(op6);
+    expect(opWithUniqueVersion).to.equal(op6);
   });
 
   it('has a unique op with two ops and a current op of null', function() {
@@ -147,13 +147,13 @@ describe('OpLinkValidator', function() {
     validator.push(op3);
     var opWithUniqueVersion = validator.opWithUniqueVersion();
 
-    expect(opWithUniqueVersion).to.be(op2);
+    expect(opWithUniqueVersion).to.equal(op2);
   });
 
   it('is at the end of the list with a current op of null', function() {
     var op = null;
     var validator = new OpLinkValidator();
     validator.push(op);
-    expect(validator.isAtEndOfList()).to.be(true);
+    expect(validator.isAtEndOfList()).to.equal(true);
   });
 });
