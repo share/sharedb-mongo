@@ -188,7 +188,10 @@ ShareDbMongo.prototype._connect = function(mongo, options) {
     mongo(finish);
     return;
   }
-  mongodb.connect(mongo, options, finish);
+  // TODO: Don't pass options directly to mongodb.connect();
+  // only pass options.mongoOptions
+  var mongoOptions = options.mongoOptions || options;
+  mongodb.connect(mongo, mongoOptions, finish);
 };
 
 ShareDbMongo.prototype.close = function(callback) {
