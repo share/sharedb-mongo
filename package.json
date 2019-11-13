@@ -4,8 +4,8 @@
   "description": "MongoDB database adapter for ShareDB",
   "main": "index.js",
   "dependencies": {
-    "async": "^1.4.2",
-    "mongodb": "^2.1.2",
+    "async": "^1.5.2",
+    "mongodb": "^2.1.2 || ^3.0.0",
     "sharedb": "^1.0.0-beta"
   },
   "devDependencies": {
