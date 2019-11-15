@@ -1,5 +1,4 @@
-var expect = require('expect.js');
-var mongodb = require('mongodb');
+var expect = require('chai').expect;
 var ShareDbMongo = require('..');
 var getQuery = require('sharedb-mingo-memory/get-query');
 var sinon = require('sinon');
@@ -7,18 +6,16 @@ var sinon = require('sinon');
 var mongoUrl = process.env.TEST_MONGO_URL || 'mongodb://localhost:27017/test';
 
 function create(callback) {
-  var db = new ShareDbMongo({
-    mongo: function(shareDbCallback) {
-      mongodb.connect(mongoUrl, function(err, mongo) {
-        if (err) return callback(err);
-        mongo.dropDatabase(function(err) {
-          if (err) return callback(err);
-          shareDbCallback(null, mongo);
-          callback(null, db, mongo);
-        });
-      });
-    },
+  var db = new ShareDbMongo(mongoUrl, {
+    mongoOptions: {},
     getOpsWithoutStrictLinking: true
+  });
+  db.getDbs(function(err, mongo) {
+    if (err) return callback(err);
+    mongo.dropDatabase(function(err) {
+      if (err) return callback(err);
+      callback(null, db, mongo);
+    });
   });
 };
 
@@ -67,11 +64,11 @@ describe('getOpsWithoutStrictLinking: true', function() {
     it('fetches ops 0-1 without fetching all ops', function(done) {
       db.getOps(collection, id, 0, 2, null, function(error, ops) {
         if (error) return done(error);
-        expect(ops.length).to.be(2);
-        expect(ops[0].v).to.be(0);
-        expect(ops[1].v).to.be(1);
-        expect(db._getSnapshotOpLink.notCalled).to.be(true);
-        expect(db._getOps.calledOnceWith(collection, id, 0, 2)).to.be(true);
+        expect(ops.length).to.equal(2);
+        expect(ops[0].v).to.equal(0);
+        expect(ops[1].v).to.equal(1);
+        expect(db._getSnapshotOpLink.notCalled).to.equal(true);
+        expect(db._getOps.calledOnceWith(collection, id, 0, 2)).to.equal(true);
         done();
       });
     });
@@ -81,16 +78,16 @@ describe('getOpsWithoutStrictLinking: true', function() {
 
       callInSeries([
         function(next) {
-          mongo.collection('o_' + collection).insert(spuriousOp, next);
+          mongo.collection('o_' + collection).insertOne(spuriousOp, next);
         },
         function(result, next) {
           db.getOps(collection, id, 0, 2, null, next);
         },
         function(ops, next) {
-          expect(ops.length).to.be(2);
-          expect(ops[1].oi).to.be('bar');
-          expect(db._getSnapshotOpLink.notCalled).to.be(true);
-          expect(db._getOps.calledOnceWith(collection, id, 0, 2)).to.be(true);
+          expect(ops.length).to.equal(2);
+          expect(ops[1].oi).to.equal('bar');
+          expect(db._getSnapshotOpLink.notCalled).to.equal(true);
+          expect(db._getOps.calledOnceWith(collection, id, 0, 2)).to.equal(true);
           next();
         },
         done
@@ -102,16 +99,16 @@ describe('getOpsWithoutStrictLinking: true', function() {
 
       callInSeries([
         function(next) {
-          mongo.collection('o_' + collection).insert(spuriousOp, next);
+          mongo.collection('o_' + collection).insertOne(spuriousOp, next);
         },
         function(result, next) {
           db.getOps(collection, id, 0, 2, null, next);
         },
         function(ops, next) {
-          expect(ops.length).to.be(2);
-          expect(ops[1].oi).to.be('bar');
-          expect(db._getSnapshotOpLink.notCalled).to.be(true);
-          expect(db._getOps.calledOnceWith(collection, id, 0, 3)).to.be(true);
+          expect(ops.length).to.equal(2);
+          expect(ops[1].oi).to.equal('bar');
+          expect(db._getSnapshotOpLink.notCalled).to.equal(true);
+          expect(db._getOps.calledOnceWith(collection, id, 0, 3)).to.equal(true);
           next();
         },
         done
@@ -134,10 +131,10 @@ describe('getOpsWithoutStrictLinking: true', function() {
           db.getOps(collection, id, 0, 2, null, next);
         },
         function(ops, next) {
-          expect(ops.length).to.be(2);
+          expect(ops.length).to.equal(2);
           expect(ops[0].create).to.eql({});
-          expect(ops[1].oi).to.be('bar');
-          expect(db._getSnapshotOpLink.calledOnce).to.be(true);
+          expect(ops[1].oi).to.equal('bar');
+          expect(db._getSnapshotOpLink.calledOnce).to.equal(true);
           next();
         },
         done

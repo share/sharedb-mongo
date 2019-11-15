@@ -1,4 +1,4 @@
-var expect = require('expect.js');
+var expect = require('chai').expect;
 var ShareDbMongo = require('../index');
 
 describe('skipPoll', function() {

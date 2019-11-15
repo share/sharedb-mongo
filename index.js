@@ -58,7 +58,9 @@ function ShareDbMongo(mongo, options) {
     // We can only get the mongodb client instance in a callback, so
     // buffer up any requests received in the meantime
     this.mongo = null;
+    this._mongoClient = null;
     this.mongoPoll = null;
+    this._mongoPollClient = null;
     this.pendingConnect = [];
     this._connect(mongo, options);
   } else {
@@ -125,6 +127,16 @@ ShareDbMongo.prototype._flushPendingConnect = function() {
   }
 };
 
+function isLegacyMongoClient(client) {
+  // mongodb 2.0 connect returns a DB object that also implements the
+  // functionality of client, such as `close()`. mongodb 3.0 connect returns a
+  // Client without the `collection()` method
+  return (
+    typeof client.collection === 'function' &&
+    typeof client.close === 'function'
+  );
+}
+
 ShareDbMongo.prototype._connect = function(mongo, options) {
   // Create the mongo connection client connections if needed
   //
@@ -137,32 +149,49 @@ ShareDbMongo.prototype._connect = function(mongo, options) {
       tasks = {mongo: mongo, mongoPoll: options.mongoPoll};
     } else {
       tasks = {
-        mongo: function(parallelCb) {
+        mongoClient: function(parallelCb) {
           mongodb.connect(mongo, options.mongoOptions, parallelCb);
         },
-        mongoPoll: function(parallelCb) {
+        mongoPollClient: function(parallelCb) {
           mongodb.connect(options.mongoPoll, options.mongoPollOptions, parallelCb);
         }
       };
     }
     async.parallel(tasks, function(err, results) {
       if (err) throw err;
-      self.mongo = results.mongo;
-      self.mongoPoll = results.mongoPoll;
+      var mongoClient = results.mongoClient;
+      var mongoPollClient = results.mongoPollClient;
+      if (isLegacyMongoClient(mongoClient)) {
+        self.mongo = self._mongoClient = mongoClient;
+        self.mongoPoll = self._mongoPollClient = mongoPollClient;
+      } else {
+        self.mongo = mongoClient.db();
+        self._mongoClient = mongoClient;
+        self.mongoPoll = mongoPollClient.db();
+        self._mongoPollClient = mongoPollClient;
+      }
       self._flushPendingConnect();
     });
     return;
   }
-  var finish = function(err, db) {
+  var finish = function(err, client) {
     if (err) throw err;
-    self.mongo = db;
+    if (isLegacyMongoClient(client)) {
+      self.mongo = self._mongoClient = client;
+    } else {
+      self.mongo = client.db();
+      self._mongoClient = client;
+    }
     self._flushPendingConnect();
   };
   if (typeof mongo === 'function') {
     mongo(finish);
     return;
   }
-  mongodb.connect(mongo, options, finish);
+  // TODO: Don't pass options directly to mongodb.connect();
+  // only pass options.mongoOptions
+  var mongoOptions = options.mongoOptions || options;
+  mongodb.connect(mongo, mongoOptions, finish);
 };
 
 ShareDbMongo.prototype.close = function(callback) {
@@ -172,13 +201,13 @@ ShareDbMongo.prototype.close = function(callback) {
     };
   }
   var self = this;
-  this.getDbs(function(err, mongo, mongoPoll) {
+  this.getDbs(function(err) {
     if (err) return callback(err);
     self.closed = true;
-    mongo.close(function(err) {
+    self._mongoClient.close(function(err) {
       if (err) return callback(err);
-      if (!mongoPoll) return callback();
-      mongoPoll.close(callback);
+      if (!self._mongoPollClient) return callback();
+      self._mongoPollClient.close(callback);
     });
   });
 };
