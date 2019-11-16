@@ -143,20 +143,16 @@ ShareDbMongo.prototype._connect = function(mongo, options) {
   // Throw errors in this function if we fail to connect, since we aren't
   // implementing a way to retry
   var self = this;
-  if (options.mongoPoll) {
-    var tasks;
-    if (typeof mongo === 'function') {
-      tasks = {mongo: mongo, mongoPoll: options.mongoPoll};
-    } else {
-      tasks = {
-        mongoClient: function(parallelCb) {
-          mongodb.connect(mongo, options.mongoOptions, parallelCb);
-        },
-        mongoPollClient: function(parallelCb) {
-          mongodb.connect(options.mongoPoll, options.mongoPollOptions, parallelCb);
-        }
-      };
-    }
+  var mongoPoll = options.mongoPoll;
+  if (mongoPoll) {
+    var tasks = {
+      mongoClient: (typeof mongo === 'function') ? mongo : function(parallelCb) {
+        mongodb.connect(mongo, options.mongoOptions, parallelCb);
+      },
+      mongoPollClient: (typeof mongoPoll === 'function') ? mongoPoll : function(parallelCb) {
+        mongodb.connect(mongoPoll, options.mongoPollOptions, parallelCb);
+      }
+    };
     async.parallel(tasks, function(err, results) {
       if (err) throw err;
       var mongoClient = results.mongoClient;
