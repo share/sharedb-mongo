@@ -1194,7 +1194,6 @@ function deletedDocCouldSatisfyQuery(query) {
           return false;
         }
       }
-      return true;
     } else {
       // Malformed? Play it safe.
       return true;

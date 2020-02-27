@@ -481,10 +481,18 @@ describe('parse query', function() {
       doesNotModify({foo: {$in: [null, 2, 3]}, bar: 1});
     });
 
-    it('top-level $and', function() {
+    it('top-level $and alone', function() {
       doesNotModify({$and: [{foo: {$ne: null}}, {bar: {$ne: null}}]});
       doesNotModify({$and: [{foo: {$ne: 1}}, {bar: {$ne: null}}]});
       addsType({$and: [{foo: {$ne: 1}}, {bar: {$ne: 1}}]});
+    });
+
+    describe('top-level $and with other conditions', function() {
+      // If the top-level $and could match a deleted doc, it should continue looking at the other
+      // top-level conditions.
+      it('does not add _type for "field: nonNullValue"', function() {
+        doesNotModify({$and: [{foo: {$ne: true}}], bar: 1});
+      });
     });
 
     it('top-level $or alone', function() {
