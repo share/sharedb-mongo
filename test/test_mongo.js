@@ -528,6 +528,8 @@ describe('parse query', function() {
       addsType({foo: {$bad: 1}});
       addsType({$bad: [2, 3]});
       addsType({$and: [[{foo: 1}]]});
+      addsType({$and: 1});
+      addsType({$expr: {$gt: {$subtract: ['$endDate', '$startDate']}}});
     });
   });
 });
