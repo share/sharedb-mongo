@@ -481,16 +481,50 @@ describe('parse query', function() {
       doesNotModify({foo: {$in: [null, 2, 3]}, bar: 1});
     });
 
-    it('top-level $and', function() {
+    it('top-level $and alone', function() {
       doesNotModify({$and: [{foo: {$ne: null}}, {bar: {$ne: null}}]});
       doesNotModify({$and: [{foo: {$ne: 1}}, {bar: {$ne: null}}]});
       addsType({$and: [{foo: {$ne: 1}}, {bar: {$ne: 1}}]});
     });
 
-    it('top-level $or', function() {
+    describe('top-level $and with other conditions', function() {
+      // If the top-level $and could match a deleted doc, it should continue looking at the other
+      // top-level conditions.
+      it('does not add _type for "field: nonNullValue"', function() {
+        doesNotModify({$and: [{foo: {$ne: true}}], bar: 1});
+      });
+    });
+
+    it('top-level $or alone', function() {
       doesNotModify({$or: [{foo: {$ne: null}}, {bar: {$ne: null}}]});
       addsType({$or: [{foo: {$ne: 1}}, {bar: {$ne: null}}]});
       addsType({$or: [{foo: {$ne: 1}}, {bar: {$ne: 1}}]});
+    });
+
+    describe('top-level $or with other conditions', function() {
+      // With conditions at top level that don't match deleted docs, the $or doesn't matter.
+      it('does not add _type for "field: nonNullValue"', function() {
+        doesNotModify({$or: [{foo: {$ne: true}}], bar: 1});
+      });
+      it('does not add _type for $in with nonNullValues', function() {
+        doesNotModify({$or: [{foo: {$ne: true}}], bar: {$in: ['a', 'b']}});
+      });
+      // If the other conditions could match deleted docs, then the $or _does_ matter.
+      it('adds _type for "field: null"', function() {
+        addsType({$or: [{foo: {$ne: true}}], bar: null});
+      });
+      it('adds _type for $in with a null value', function() {
+        addsType({$or: [{foo: {$ne: true}}], bar: {$in: ['a', 'b', null]}});
+      });
+      it('does not add _type when all $or branches do not match deleted docs', function() {
+        doesNotModify({
+          $or: [
+            {foo: {$ne: null}},
+            {bar: 1}
+          ],
+          baz: null
+        });
+      });
     });
 
     it('malformed queries', function() {
@@ -502,6 +536,8 @@ describe('parse query', function() {
       addsType({foo: {$bad: 1}});
       addsType({$bad: [2, 3]});
       addsType({$and: [[{foo: 1}]]});
+      addsType({$and: 1});
+      addsType({$expr: {$gt: {$subtract: ['$endDate', '$startDate']}}});
     });
   });
 });
