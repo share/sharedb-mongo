@@ -1201,20 +1201,6 @@ function deletedDocCouldSatisfyQuery(query) {
     }
   }
 
-  if (query.hasOwnProperty('$or')) {
-    if (Array.isArray(query.$or)) {
-      for (var i = 0; i < query.$or.length; i++) {
-        if (deletedDocCouldSatisfyQuery(query.$or[i])) {
-          return true;
-        }
-      }
-      return false;
-    } else {
-      // Malformed? Play it safe.
-      return true;
-    }
-  }
-
   for (var prop in query) {
     // Ignore fields that remain set on deleted docs
     if (
@@ -1229,6 +1215,10 @@ function deletedDocCouldSatisfyQuery(query) {
     ) {
       continue;
     }
+    // Top-level operators with special handling in this function
+    if (prop === '$and' || prop === '$or') {
+      continue;
+    }
     // When using top-level operators that we don't understand, play
     // it safe
     if (prop[0] === '$') {
@@ -1236,6 +1226,20 @@ function deletedDocCouldSatisfyQuery(query) {
     }
     if (!couldMatchNull(query[prop])) {
       return false;
+    }
+  }
+
+  if (query.hasOwnProperty('$or')) {
+    if (Array.isArray(query.$or)) {
+      for (var i = 0; i < query.$or.length; i++) {
+        if (deletedDocCouldSatisfyQuery(query.$or[i])) {
+          return true;
+        }
+      }
+      return false;
+    } else {
+      // Malformed? Play it safe.
+      return true;
     }
   }
 

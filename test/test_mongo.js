@@ -487,10 +487,36 @@ describe('parse query', function() {
       addsType({$and: [{foo: {$ne: 1}}, {bar: {$ne: 1}}]});
     });
 
-    it('top-level $or', function() {
+    it('top-level $or alone', function() {
       doesNotModify({$or: [{foo: {$ne: null}}, {bar: {$ne: null}}]});
       addsType({$or: [{foo: {$ne: 1}}, {bar: {$ne: null}}]});
       addsType({$or: [{foo: {$ne: 1}}, {bar: {$ne: 1}}]});
+    });
+
+    describe('top-level $or with other conditions', function() {
+      // With conditions at top level that don't match deleted docs, the $or doesn't matter.
+      it('does not add _type for "field: nonNullValue"', function() {
+        doesNotModify({$or: [{foo: {$ne: true}}], bar: 1});
+      });
+      it('does not add _type for $in with nonNullValues', function() {
+        doesNotModify({$or: [{foo: {$ne: true}}], bar: {$in: ['a', 'b']}});
+      });
+      // If the other conditions could match deleted docs, then the $or _does_ matter.
+      it('adds _type for "field: null"', function() {
+        addsType({$or: [{foo: {$ne: true}}], bar: null});
+      });
+      it('adds _type for $in with a null value', function() {
+        addsType({$or: [{foo: {$ne: true}}], bar: {$in: ['a', 'b', null]}});
+      });
+      it('does not add _type when all $or branches do not match deleted docs', function() {
+        doesNotModify({
+          $or: [
+            {foo: {$ne: null}},
+            {bar: 1}
+          ],
+          baz: null
+        });
+      });
     });
 
     it('malformed queries', function() {
