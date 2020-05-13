@@ -829,6 +829,7 @@ ShareDbMongo.prototype.queryPoll = function(collectionName, inputQuery, options,
 ShareDbMongo.prototype.queryPollDoc = function(collectionName, id, inputQuery, options, callback) {
   var self = this;
   self.getCollectionPoll(collectionName, function(err, collection) {
+    if (err) return callback(err);
     var parsed = self._getSafeParsedQuery(inputQuery, callback);
     if (!parsed) return;
 
