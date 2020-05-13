@@ -2,3 +2,4 @@
 --check-leaks
 --globals Promise
 --timeout 18000
+--file test/setup.js
