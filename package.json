@@ -15,6 +15,7 @@
     "eslint-config-google": "^0.13.0",
     "mocha": "^6.2.2",
     "nyc": "^14.1.1",
+    "ot-json1": "^1.0.1",
     "sharedb-mingo-memory": "^1.1.1",
     "sinon": "^6.1.5"
   },
