@@ -1,6 +1,7 @@
 var expect = require('chai').expect;
 var ShareDbMongo = require('..');
 var getQuery = require('sharedb-mingo-memory/get-query');
+var async = require('async');
 
 var mongoUrl = process.env.TEST_MONGO_URL || 'mongodb://localhost:27017/test';
 
@@ -77,8 +78,50 @@ describe('mongo db', function() {
   });
 
   describe('query', function() {
-    // Run query tests for the types of queries supported by ShareDBMingo
-    require('sharedb-mingo-memory/test/query')();
+    it('$count should count documents', function(done) {
+      var snapshots = [
+        {type: 'json0', id: 'test1', v: 1, data: {x: 1, y: 1}},
+        {type: 'json0', id: 'test2', v: 1, data: {x: 2, y: 2}},
+        {type: 'json0', id: 'test3', v: 1, data: {x: 3, y: 2}}
+      ];
+      var query = {$count: true, y: 2};
+
+      var db = this.db;
+      async.each(snapshots, function(snapshot, cb) {
+        db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, null, cb);
+      }, function(err) {
+        if (err) return done(err);
+        db.query('testcollection', query, null, null, function(err, results, extra) {
+          if (err) return done(err);
+
+          expect(results).eql([]);
+          expect(extra).eql(2);
+          done();
+        });
+      });
+    });
+
+    it('$sort, $skip and $limit should order, skip and limit', function(done) {
+      var snapshots = [
+        {type: 'json0', v: 1, data: {x: 1}, id: 'test1', m: null},
+        {type: 'json0', v: 1, data: {x: 3}, id: 'test2', m: null}, // intentionally added out of sort order
+        {type: 'json0', v: 1, data: {x: 2}, id: 'test3', m: null}
+      ];
+      var query = {$sort: {x: 1}, $skip: 1, $limit: 1};
+
+      var db = this.db;
+      async.each(snapshots, function(snapshot, cb) {
+        db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, null, cb);
+      }, function(err) {
+        if (err) return done(err);
+
+        db.query('testcollection', query, null, null, function(err, results) {
+          if (err) throw err;
+          expect(results).eql([snapshots[2]]);
+          done();
+        });
+      });
+    });
 
     it('does not allow $where queries', function(done) {
       this.db.query('testcollection', {$where: 'true'}, null, null, function(err) {
