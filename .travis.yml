@@ -9,6 +9,7 @@ services:
   - docker
 
 env:
+  - MONGODB_VERSION="4.4"
   - MONGODB_VERSION="4.2"
   - MONGODB_VERSION="4.0"
   - MONGODB_VERSION="3.6"
