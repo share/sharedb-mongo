@@ -362,7 +362,7 @@ describe('mongo db', function() {
             };
             db.query('testcollection', query, null, null, function(err, results, extra) {
               if (err) return done(err);
-              expect(extra).eql([{_id: 'a', value: 12}, {_id: 'b', value: 15}]);
+              expect(extra).to.have.deep.members([{_id: 'a', value: 12}, {_id: 'b', value: 15}]);
               done();
             });
           });
