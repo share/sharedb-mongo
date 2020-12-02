@@ -198,6 +198,8 @@ ShareDbMongo.prototype.close = function(callback) {
   }
   var self = this;
   this.getDbs(function(err) {
+    // Ignore "already closed"
+    if (err && err.code === 5101) return callback();
     if (err) return callback(err);
     self.closed = true;
     self._mongoClient.close(function(err) {
