@@ -7,19 +7,30 @@ var mongoUrl = process.env.TEST_MONGO_URL || 'mongodb://localhost:27017/test';
 
 function create(callback) {
   var db = new ShareDbMongo(mongoUrl);
+  console.log('test_mongo running getDbs');
   db.getDbs(function(err, mongo) {
+    console.log('test_mongo getDbs result:', err, mongo);
     if (err) return callback(err);
     mongo.dropDatabase(function(err) {
+      console.log('test_mongo dropDatabase result:', err);
       if (err) return callback(err);
       callback(null, db, mongo);
     });
   });
 };
 
+beforeEach(function() {
+  console.log('global beforeEach for ' + this.test.fullTitle());
+});
+afterEach(function() {
+  console.log('global afterEach for ' + this.test.fullTitle());
+});
+
 require('sharedb/test/db')({create: create, getQuery: getQuery});
 
 describe('mongo db', function() {
   beforeEach(function(done) {
+    console.log('mongo db beforeEach for ' + this.test.fullTitle());
     var self = this;
     create(function(err, db, mongo) {
       if (err) return done(err);
@@ -30,11 +41,13 @@ describe('mongo db', function() {
   });
 
   afterEach(function(done) {
+    console.log('mongo db afterEach for ' + this.test.fullTitle());
     this.db.close(done);
   });
 
   describe('indexes', function() {
     it('adds ops index', function(done) {
+      console.log('running ' + this.test.fullTitle());
       var mongo = this.mongo;
       this.db.commit('testcollection', 'foo', {v: 0, create: {}}, {}, null, function(err) {
         if (err) return done(err);
