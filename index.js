@@ -109,6 +109,7 @@ ShareDbMongo.prototype.getCollectionPoll = function(collectionName, callback) {
 
 ShareDbMongo.prototype.getDbs = function(callback) {
   if (this.closed) {
+    console.log(new Error('ShareDbMongo.getDbs already closed'));
     var err = ShareDbMongo.alreadyClosedError();
     return callback(err);
   }
@@ -230,6 +231,9 @@ ShareDbMongo.prototype.commit = function(collectionName, id, op, snapshot, optio
 };
 
 ShareDbMongo.prototype._writeOp = function(collectionName, id, op, snapshot, callback) {
+  if (this.closed) {
+    console.log('_writeOp when closed', collectionName, id, op, snapshot);
+  }
   if (typeof op.v !== 'number') {
     var err = ShareDbMongo.invalidOpVersionError(collectionName, id, op.v);
     return callback(err);
@@ -251,6 +255,9 @@ ShareDbMongo.prototype._deleteOp = function(collectionName, opId, callback) {
 };
 
 ShareDbMongo.prototype._writeSnapshot = function(collectionName, id, snapshot, opLink, callback) {
+  if (this.closed) {
+    console.log('_writeSnapshot when closed', collectionName, id, snapshot);
+  }
   this.getCollection(collectionName, function(err, collection) {
     if (err) return callback(err);
     var doc = castToDoc(id, snapshot, opLink);
