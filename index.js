@@ -66,6 +66,8 @@ function ShareDbMongo(mongo, options) {
   } else {
     throw new Error('deprecated: pass mongo as url string or function with callback');
   }
+
+  this.middleware = {};
 };
 
 ShareDbMongo.prototype = Object.create(DB.prototype);
@@ -215,14 +217,24 @@ ShareDbMongo.prototype.close = function(callback) {
 
 ShareDbMongo.prototype.commit = function(collectionName, id, op, snapshot, options, callback) {
   var self = this;
+  var request = {
+    collectionName: collectionName,
+    id: id,
+    op: op,
+    snapshot: snapshot
+  };
+  if (options) {
+    request.agent = options.agent;
+  }
   this._writeOp(collectionName, id, op, snapshot, function(err, result) {
     if (err) return callback(err);
     var opId = result.insertedId;
-    self._writeSnapshot(collectionName, id, snapshot, opId, function(err, succeeded) {
+    request.opId = opId;
+    self._writeSnapshot(request, function(err, succeeded) {
       if (succeeded) return callback(err, succeeded);
       // Cleanup unsuccessful op if snapshot write failed. This is not
       // neccessary for data correctness, but it gets rid of clutter
-      self._deleteOp(collectionName, opId, function(removeErr) {
+      self._deleteOp(request.collectionName, request.opId, function(removeErr) {
         callback(err || removeErr, succeeded);
       });
     });
@@ -250,10 +262,11 @@ ShareDbMongo.prototype._deleteOp = function(collectionName, opId, callback) {
   });
 };
 
-ShareDbMongo.prototype._writeSnapshot = function(collectionName, id, snapshot, opLink, callback) {
-  this.getCollection(collectionName, function(err, collection) {
+ShareDbMongo.prototype._writeSnapshot = function(request, callback) {
+  var self = this;
+  this.getCollection(request.collectionName, function(err, collection) {
     if (err) return callback(err);
-    var doc = castToDoc(id, snapshot, opLink);
+    var doc = castToDoc(request.id, request.snapshot, request.opLink);
     if (doc._v === 1) {
       collection.insertOne(doc, function(err) {
         if (err) {
@@ -267,10 +280,16 @@ ShareDbMongo.prototype._writeSnapshot = function(collectionName, id, snapshot, o
         callback(null, true);
       });
     } else {
-      collection.replaceOne({_id: id, _v: doc._v - 1}, doc, function(err, result) {
-        if (err) return callback(err);
-        var succeeded = !!result.modifiedCount;
-        callback(null, succeeded);
+      request.queryFilter = {_id: request.id, _v: doc._v - 1};
+      self.trigger(self.MIDDLEWARE_ACTIONS.replaceOne, null, request, function(middlewareErr) {
+        if (middlewareErr) {
+          return callback(middlewareErr);
+        }
+        collection.replaceOne(request.queryFilter, doc, function(err, result) {
+          if (err) return callback(err);
+          var succeeded = !!result.modifiedCount;
+          callback(null, succeeded);
+        });
       });
     }
   });
@@ -1576,3 +1595,5 @@ ShareDbMongo.parseQueryError = function(err) {
   err.code = 5104;
   return err;
 };
+
+require('./src/middleware')(ShareDbMongo);
