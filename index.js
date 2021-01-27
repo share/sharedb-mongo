@@ -217,12 +217,15 @@ ShareDbMongo.prototype.close = function(callback) {
 
 ShareDbMongo.prototype.commit = function(collectionName, id, op, snapshot, options, callback) {
   var self = this;
+  // Unsure of the naming of "request" but we need an object that contains all the properties
+  // that should be passed through middleware
   var request = {
     collectionName: collectionName,
     id: id,
     op: op,
     snapshot: snapshot
   };
+  // Maybe we use options to serve as "agent" or maybe we just pass the entire options on the request?
   if (options) {
     request.agent = options.agent;
   }

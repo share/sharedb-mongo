@@ -3,8 +3,8 @@ var MIDDLEWARE_ACTIONS = require('./actions');
 
 function extendWithMiddleware(ShareDbMongo) {
   /**
- * Add middleware to an action or array of actions
- */
+  * Add middleware to an action or array of actions
+  */
   ShareDbMongo.prototype.use = function(action, fn) {
     if (Array.isArray(action)) {
       for (var i = 0; i < action.length; i++) {
