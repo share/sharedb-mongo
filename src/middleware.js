@@ -4,6 +4,14 @@ var MIDDLEWARE_ACTIONS = require('./actions');
 function extendWithMiddleware(ShareDbMongo) {
   /**
   * Add middleware to an action or array of actions
+  *
+  * @param action The action to use from MIDDLEWARE_ACTIONS (e.g. 'beforeWrite')
+  * @param fn The function to call when this middleware is triggered
+  * The fn receives a request object with information on the triggered action (e.g. the snapshot to write)
+  * and a next function to call once the middleware is complete
+  *
+  * NOTE: It is recommended not to add async or long running tasks to the sharedb-mongo middleware as it will
+  * be called very frequently during sensitive operations. It may have a significant performance impact.
   */
   ShareDbMongo.prototype.use = function(action, fn) {
     if (Array.isArray(action)) {
@@ -23,10 +31,13 @@ function extendWithMiddleware(ShareDbMongo) {
    * Middleware may modify the request object. After all middleware have been
    * invoked we call `callback` with `null` and the modified request. If one of
    * the middleware resturns an error the callback is called with that error.
+   *
+   * @param action The action to trigger from MIDDLEWARE_ACTIONS (e.g. 'beforeWrite')
+   * @param request Request details such as the snapshot to write, depends on the triggered action
+   * @param callback Function to call once the middleware has been processed.
    */
-  ShareDbMongo.prototype.trigger = function(action, agent, request, callback) {
+  ShareDbMongo.prototype.trigger = function(action, request, callback) {
     request.action = action;
-    if (agent) request.agent = agent;
 
     var fns = this.middleware[action];
     if (!fns) return callback();

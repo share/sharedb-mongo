@@ -223,12 +223,9 @@ ShareDbMongo.prototype.commit = function(collectionName, id, op, snapshot, optio
     collectionName: collectionName,
     id: id,
     op: op,
-    snapshot: snapshot
+    snapshot: snapshot,
+    options: options
   };
-  // Maybe we use options to serve as "agent" or maybe we just pass the entire options on the request?
-  if (options) {
-    request.agent = options.agent;
-  }
   this._writeOp(collectionName, id, op, snapshot, function(err, result) {
     if (err) return callback(err);
     var opId = result.insertedId;
@@ -284,7 +281,7 @@ ShareDbMongo.prototype._writeSnapshot = function(request, callback) {
       });
     } else {
       request.queryFilter = {_id: request.id, _v: doc._v - 1};
-      self.trigger(self.MIDDLEWARE_ACTIONS.replaceOne, null, request, function(middlewareErr) {
+      self.trigger(self.MIDDLEWARE_ACTIONS.beforeWrite, request, function(middlewareErr) {
         if (middlewareErr) {
           return callback(middlewareErr);
         }
