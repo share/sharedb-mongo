@@ -217,15 +217,7 @@ ShareDbMongo.prototype.close = function(callback) {
 
 ShareDbMongo.prototype.commit = function(collectionName, id, op, snapshot, options, callback) {
   var self = this;
-  // Unsure of the naming of "request" but we need an object that contains all the properties
-  // that should be passed through middleware
-  var request = {
-    collectionName: collectionName,
-    id: id,
-    op: op,
-    snapshot: snapshot,
-    options: options
-  };
+  var request = createRequestForMiddleware(collectionName, id, op, snapshot, options);
   this._writeOp(collectionName, id, op, snapshot, function(err, result) {
     if (err) return callback(err);
     var opId = result.insertedId;
@@ -240,6 +232,17 @@ ShareDbMongo.prototype.commit = function(collectionName, id, op, snapshot, optio
     });
   });
 };
+
+function createRequestForMiddleware(collectionName, id, op, snapshot, options) {
+  // Create a new request object which will be passed to helper functions and middleware
+  return {
+    collectionName: collectionName,
+    id: id,
+    op: op,
+    snapshot: snapshot,
+    options: options
+  };
+}
 
 ShareDbMongo.prototype._writeOp = function(collectionName, id, op, snapshot, callback) {
   if (typeof op.v !== 'number') {
@@ -266,9 +269,9 @@ ShareDbMongo.prototype._writeSnapshot = function(request, callback) {
   var self = this;
   this.getCollection(request.collectionName, function(err, collection) {
     if (err) return callback(err);
-    var doc = castToDoc(request.id, request.snapshot, request.opId);
-    if (doc._v === 1) {
-      collection.insertOne(doc, function(err) {
+    request.doc = castToDoc(request.id, request.snapshot, request.opId);
+    if (request.doc._v === 1) {
+      collection.insertOne(request.doc, function(err) {
         if (err) {
           // Return non-success instead of duplicate key error, since this is
           // expected to occur during simultaneous creates on the same id
@@ -280,12 +283,12 @@ ShareDbMongo.prototype._writeSnapshot = function(request, callback) {
         callback(null, true);
       });
     } else {
-      request.queryFilter = {_id: request.id, _v: doc._v - 1};
-      self.trigger(self.MIDDLEWARE_ACTIONS.beforeWrite, request, function(middlewareErr) {
+      request.queryFilter = {_id: request.id, _v: request.doc._v - 1};
+      self.trigger(self.MIDDLEWARE_ACTIONS.beforeEdit, request, function(middlewareErr) {
         if (middlewareErr) {
           return callback(middlewareErr);
         }
-        collection.replaceOne(request.queryFilter, doc, function(err, result) {
+        collection.replaceOne(request.queryFilter, request.doc, function(err, result) {
           if (err) return callback(err);
           var succeeded = !!result.modifiedCount;
           callback(null, succeeded);
@@ -299,36 +302,50 @@ ShareDbMongo.prototype._writeSnapshot = function(request, callback) {
 // **** Snapshot methods
 
 ShareDbMongo.prototype.getSnapshot = function(collectionName, id, fields, options, callback) {
+  var self = this;
   this.getCollection(collectionName, function(err, collection) {
     if (err) return callback(err);
     var query = {_id: id};
     var projection = getProjection(fields, options);
-    collection.find(query).limit(1).project(projection).next(function(err, doc) {
-      if (err) return callback(err);
-      var snapshot = (doc) ? castToSnapshot(doc) : new MongoSnapshot(id, 0, null, undefined);
-      callback(null, snapshot);
+    var request = createRequestForMiddleware(collectionName, id, null, null, options);
+    request.query = query;
+    self.trigger(self.MIDDLEWARE_ACTIONS.beforeSnapshotLookup, request, function(middlewareErr) {
+      if (middlewareErr) return callback(middlewareErr);
+
+      collection.find(request.query).limit(1).project(projection).next(function(err, doc) {
+        if (err) return callback(err);
+        var snapshot = (doc) ? castToSnapshot(doc) : new MongoSnapshot(id, 0, null, undefined);
+        callback(null, snapshot);
+      });
     });
   });
 };
 
 ShareDbMongo.prototype.getSnapshotBulk = function(collectionName, ids, fields, options, callback) {
+  var self = this;
   this.getCollection(collectionName, function(err, collection) {
     if (err) return callback(err);
     var query = {_id: {$in: ids}};
     var projection = getProjection(fields, options);
-    collection.find(query).project(projection).toArray(function(err, docs) {
-      if (err) return callback(err);
-      var snapshotMap = {};
-      for (var i = 0; i < docs.length; i++) {
-        var snapshot = castToSnapshot(docs[i]);
-        snapshotMap[snapshot.id] = snapshot;
-      }
-      for (var i = 0; i < ids.length; i++) {
-        var id = ids[i];
-        if (snapshotMap[id]) continue;
-        snapshotMap[id] = new MongoSnapshot(id, 0, null, undefined);
-      }
-      callback(null, snapshotMap);
+    var request = createRequestForMiddleware(collectionName, ids, null, null, options);
+    request.query = query;
+    self.trigger(self.MIDDLEWARE_ACTIONS.beforeSnapshotLookup, request, function(middlewareErr) {
+      if (middlewareErr) return callback(middlewareErr);
+
+      collection.find(request.query).project(projection).toArray(function(err, docs) {
+        if (err) return callback(err);
+        var snapshotMap = {};
+        for (var i = 0; i < docs.length; i++) {
+          var snapshot = castToSnapshot(docs[i]);
+          snapshotMap[snapshot.id] = snapshot;
+        }
+        for (var i = 0; i < ids.length; i++) {
+          var id = ids[i];
+          if (snapshotMap[id]) continue;
+          snapshotMap[id] = new MongoSnapshot(id, 0, null, undefined);
+        }
+        callback(null, snapshotMap);
+      });
     });
   });
 };
