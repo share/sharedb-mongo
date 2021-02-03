@@ -217,31 +217,29 @@ ShareDbMongo.prototype.close = function(callback) {
 
 ShareDbMongo.prototype.commit = function(collectionName, id, op, snapshot, options, callback) {
   var self = this;
-  var request = createRequestForMiddleware(collectionName, id, op, snapshot, options);
+  var request = createRequestForMiddleware(options, collectionName, op);
   this._writeOp(collectionName, id, op, snapshot, function(err, result) {
     if (err) return callback(err);
     var opId = result.insertedId;
-    request.opId = opId;
-    self._writeSnapshot(request, function(err, succeeded) {
+    self._writeSnapshot(request, id, snapshot, opId, function(err, succeeded) {
       if (succeeded) return callback(err, succeeded);
       // Cleanup unsuccessful op if snapshot write failed. This is not
       // neccessary for data correctness, but it gets rid of clutter
-      self._deleteOp(request.collectionName, request.opId, function(removeErr) {
+      self._deleteOp(request.collectionName, opId, function(removeErr) {
         callback(err || removeErr, succeeded);
       });
     });
   });
 };
 
-function createRequestForMiddleware(collectionName, id, op, snapshot, options) {
+function createRequestForMiddleware(options, collectionName, op) {
   // Create a new request object which will be passed to helper functions and middleware
-  return {
-    collectionName: collectionName,
-    id: id,
-    op: op,
-    snapshot: snapshot,
-    options: options
+  var request = {
+    options: options,
+    collectionName: collectionName
   };
+  if (op) request.op = op;
+  return request;
 }
 
 ShareDbMongo.prototype._writeOp = function(collectionName, id, op, snapshot, callback) {
@@ -265,11 +263,11 @@ ShareDbMongo.prototype._deleteOp = function(collectionName, opId, callback) {
   });
 };
 
-ShareDbMongo.prototype._writeSnapshot = function(request, callback) {
+ShareDbMongo.prototype._writeSnapshot = function(request, id, snapshot, opId, callback) {
   var self = this;
   this.getCollection(request.collectionName, function(err, collection) {
     if (err) return callback(err);
-    request.doc = castToDoc(request.id, request.snapshot, request.opId);
+    request.doc = castToDoc(id, snapshot, opId);
     if (request.doc._v === 1) {
       collection.insertOne(request.doc, function(err) {
         if (err) {
@@ -283,7 +281,7 @@ ShareDbMongo.prototype._writeSnapshot = function(request, callback) {
         callback(null, true);
       });
     } else {
-      request.queryFilter = {_id: request.id, _v: request.doc._v - 1};
+      request.queryFilter = {_id: id, _v: request.doc._v - 1};
       self.trigger(self.MIDDLEWARE_ACTIONS.beforeEdit, request, function(middlewareErr) {
         if (middlewareErr) {
           return callback(middlewareErr);
@@ -307,7 +305,7 @@ ShareDbMongo.prototype.getSnapshot = function(collectionName, id, fields, option
     if (err) return callback(err);
     var query = {_id: id};
     var projection = getProjection(fields, options);
-    var request = createRequestForMiddleware(collectionName, id, null, null, options);
+    var request = createRequestForMiddleware(options, collectionName);
     request.query = query;
     self.trigger(self.MIDDLEWARE_ACTIONS.beforeSnapshotLookup, request, function(middlewareErr) {
       if (middlewareErr) return callback(middlewareErr);
