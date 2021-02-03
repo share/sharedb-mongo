@@ -15,7 +15,7 @@ function create(callback) {
   });
 };
 
-describe.only('mongo db middleware', function() {
+describe('mongo db middleware', function() {
   beforeEach(function(done) {
     var self = this;
     create(function(err, db, mongo) {
