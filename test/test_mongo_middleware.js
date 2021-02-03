@@ -31,7 +31,7 @@ describe('mongo db', function() {
     this.db.close(done);
   });
 
-  describe.only('middleware', function() {
+  describe('middleware', function() {
     it('should augment query filter', function(done) {
       var db = this.db;
       db.use('beforeWrite', function(request, next) {
