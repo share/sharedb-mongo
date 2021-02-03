@@ -88,7 +88,7 @@ describe('mongo db middleware', function() {
 
       var snapshot = {type: 'json0', id: 'test1', v: 1, data: {foo: 'bar'}};
       var editOp = {v: 2, op: [{p: ['foo'], oi: 'bar', oi: 'baz'}], m: {ts: Date.now()}};
-      var newSnapshot = {type: 'json0', id: 'test1', v: 2, data: {foo: 'fuzz'}};
+      var newSnapshot = {type: 'json0', id: 'test1', v: 2, data: {foo: 'baz'}};
 
       db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, null, function(err) {
         if (err) return done(err);
@@ -96,7 +96,7 @@ describe('mongo db middleware', function() {
           db.commit('testcollection', snapshot.id, editOp, newSnapshot, null, function(err) {
             if (err) return done(err);
             // Ensure the value is updated as expected
-            expectDocumentToContainFoo(db, 'fuzz', done);
+            expectDocumentToContainFoo(db, 'baz', done);
           });
         });
       });
@@ -115,7 +115,7 @@ describe('mongo db middleware', function() {
 
     // Issue a commit to change `bar` to `baz`
     var editOp = {v: 2, op: [{p: ['foo'], oi: 'bar', oi: 'baz'}], m: {ts: Date.now()}};
-    var newSnapshot = {type: 'json0', id: 'test1', v: 2, data: {foo: 'fuzz'}};
+    var newSnapshot = {type: 'json0', id: 'test1', v: 2, data: {foo: 'baz'}};
 
     db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, null, function(err) {
       if (err) return done(err);
