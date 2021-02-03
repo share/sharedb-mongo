@@ -281,12 +281,12 @@ ShareDbMongo.prototype._writeSnapshot = function(request, id, snapshot, opId, ca
         callback(null, true);
       });
     } else {
-      request.queryFilter = {_id: id, _v: request.doc._v - 1};
+      request.query = {_id: id, _v: request.doc._v - 1};
       self.trigger(self.MIDDLEWARE_ACTIONS.beforeEdit, request, function(middlewareErr) {
         if (middlewareErr) {
           return callback(middlewareErr);
         }
-        collection.replaceOne(request.queryFilter, request.doc, function(err, result) {
+        collection.replaceOne(request.query, request.doc, function(err, result) {
           if (err) return callback(err);
           var succeeded = !!result.modifiedCount;
           callback(null, succeeded);

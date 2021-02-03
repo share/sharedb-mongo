@@ -33,19 +33,19 @@ describe('mongo db middleware', function() {
   describe('beforeEdit', function() {
     it('should augment query filter and write to the document when commit is called', function(done) {
       var db = this.db;
-      // Augment the queryFilter. The original query looks up the document by id, wheras this middleware
+      // Augment the query. The original query looks up the document by id, wheras this middleware
       // changes it to use the `foo` property. The end result still returns the same document. The next
       // middleware ensures we attached it to the request.
       // We can't truly change which document is returned from the query because MongoDB will not allow
       // the immutable fields such as `_id` to be changed.
       db.use('beforeEdit', function(request, next) {
-        request.queryFilter.foo = 'bar';
+        request.query.foo = 'bar';
         next();
       });
       // Attach this middleware to check that the original one is passing the context
       // correctly. Commit will be called after this.
       db.use('beforeEdit', function(request, next) {
-        expect(request.queryFilter).to.deep.equal({
+        expect(request.query).to.deep.equal({
           _id: 'test1',
           _v: 1,
           foo: 'bar'
