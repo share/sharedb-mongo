@@ -1,7 +1,5 @@
 var expect = require('chai').expect;
 var ShareDbMongo = require('..');
-var getQuery = require('sharedb-mingo-memory/get-query');
-var async = require('async');
 
 var mongoUrl = process.env.TEST_MONGO_URL || 'mongodb://localhost:27017/test';
 
@@ -16,7 +14,7 @@ function create(callback) {
   });
 };
 
-describe('mongo db', function() {
+describe('mongo db middleware', function() {
   beforeEach(function(done) {
     var self = this;
     create(function(err, db, mongo) {
@@ -31,13 +29,20 @@ describe('mongo db', function() {
     this.db.close(done);
   });
 
-  describe('middleware', function() {
-    it('should augment query filter', function(done) {
+  describe('beforeWrite', function() {
+    it('should augment query filter and write to the document when commit is called', function(done) {
       var db = this.db;
+      // Augment the queryFilter. The original query looks up the document by id, wheras this middleware
+      // changes it to use the `foo` property. The end result still returns the same document. The next
+      // middleware ensures we attached it to the request.
+      // We can't truly change which document is returned from the query because MongoDB will not allow
+      // the immutable fields such as `_id` to be changed.
       db.use('beforeWrite', function(request, next) {
         request.queryFilter.foo = 'bar';
         next();
       });
+      // Attach this middleware to check that the original one is passing the context
+      // correctly. Commit will be called after this.
       db.use('beforeWrite', function(request, next) {
         expect(request.queryFilter).to.deep.equal({
           _id: 'test1',
@@ -70,6 +75,7 @@ describe('mongo db', function() {
         findsTest1('bar', function() {
           db.commit('testcollection', snapshot.id, editOp, newSnapshot, null, function(err) {
             if (err) return done(err);
+            // Ensure the value is updated as expected
             findsTest1('fuzz', done);
           });
         });
