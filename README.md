@@ -1,13 +1,13 @@
 # sharedb-mongo
 
-  [![NPM Version](https://img.shields.io/npm/v/sharedb-mongo.svg)](https://npmjs.org/package/sharedb-mongo)
-  [![Build Status](https://travis-ci.org/share/sharedb-mongo.svg?branch=master)](https://travis-ci.org/share/sharedb-mongo)
-  [![Coverage Status](https://coveralls.io/repos/github/share/sharedb-mongo/badge.svg?branch=master)](https://coveralls.io/github/share/sharedb-mongo?branch=master)
+[![NPM Version](https://img.shields.io/npm/v/sharedb-mongo.svg)](https://npmjs.org/package/sharedb-mongo)
+[![Build Status](https://travis-ci.org/share/sharedb-mongo.svg?branch=master)](https://travis-ci.org/share/sharedb-mongo)
+[![Coverage Status](https://coveralls.io/repos/github/share/sharedb-mongo/badge.svg?branch=master)](https://coveralls.io/github/share/sharedb-mongo?branch=master)
 
 MongoDB database adapter for [sharedb](https://github.com/share/sharedb). This
 driver can be used both as a snapshot store and oplog.
 
-Snapshots are stored where you'd expect (the named collection with _id=id). In
+Snapshots are stored where you'd expect (the named collection with \_id=id). In
 addition, operations are stored in `o_COLLECTION`. For example, if you have
 a `users` collection, the operations are stored in `o_users`.
 
@@ -17,11 +17,10 @@ the form of `_v` and `_type`). It is safe to query documents directly with the
 MongoDB driver or command line. Any read only mongo features, including find,
 aggregate, and map reduce are safe to perform concurrent with ShareDB.
 
-However, you must *always* use ShareDB to edit documents. Never use the
+However, you must _always_ use ShareDB to edit documents. Never use the
 MongoDB driver or command line to directly modify any documents that ShareDB
 might create or edit. ShareDB must be used to properly persist operations
 together with snapshots.
-
 
 ## Usage
 
@@ -29,26 +28,25 @@ together with snapshots.
 
 There are two ways to instantiate a sharedb-mongo wrapper:
 
-1. The simplest way is to invoke the module and pass in your mongo DB
-arguments as arguments to the module function. For example:
+1.  The simplest way is to invoke the module and pass in your mongo DB
+    arguments as arguments to the module function. For example:
 
-    ```javascript
-    const db = require('sharedb-mongo')('mongodb://localhost:27017/test', {mongoOptions: {...}});
-    const backend = new ShareDB({db});
-    ```
+        ```javascript
+        const db = require('sharedb-mongo')('mongodb://localhost:27017/test', {mongoOptions: {...}});
+        const backend = new ShareDB({db});
+        ```
 
-2. If you'd like to reuse a mongo db connection or handle mongo driver
-instantiation yourself, you can pass in a function that calls back with
-a mongo instance.
+2.  If you'd like to reuse a mongo db connection or handle mongo driver
+    instantiation yourself, you can pass in a function that calls back with
+    a mongo instance.
 
-    ```javascript
-    const mongodb = require('mongodb');
-    const db = require('sharedb-mongo')({mongo: function(callback) {
-      mongodb.connect('mongodb://localhost:27017/test', callback);
-    }});
-    const backend = new ShareDB({db});
-    ```
-
+        ```javascript
+        const mongodb = require('mongodb');
+        const db = require('sharedb-mongo')({mongo: function(callback) {
+          mongodb.connect('mongodb://localhost:27017/test', callback);
+        }});
+        const backend = new ShareDB({db});
+        ```
 
 ## Queries
 
@@ -172,7 +170,7 @@ failed ops:
 - v4: collision 4
 - v5: unique
 - v6: unique
-...
+  ...
 - v1000: unique
 
 If I want to fetch ops v1-v3, then we:
@@ -189,6 +187,32 @@ If I want to fetch ops v1-v3, then we:
 In the case where a valid op cannot be determined, we still
 fall back to fetching all ops and working backwards from the
 current version.
+
+### Middlewares
+
+Middlewares let you hook into the `sharedb-mongo` pipeline for certain actions. They are distinct from [middleware in `ShareDB`](https://github.com/share/sharedb) as they are closer the concrete calls that are made to `MongoDB` itself.
+
+The original intent for middleware on `sharedb-mongo` is to support running in a sharded `MongoDB` cluster to satisfy the requirements on shard keys for versions 4.2 and greater of `MongoDB`. For more information see [the MongoDB docs](https://docs.mongodb.com/manual/core/sharding-shard-key/#shard-keys).
+
+`share.use(action, fn)`
+Register a new middleware.
+
+- `action` _(String)_
+  One of:
+  - `'beforeEdit'`: directly before the call to replace a document, can include edits as well as deletions
+  - `'beforeSnapshotLookup'`: directly before the call to issue a query for snapshots by ID
+- `fn` _(Function(context, callback))_
+  Call this function at the time specified by `action`.
+  - `context` will always have the following properties:
+    - `action`: The action this middleware is handling
+    - `collectionName`: The collection name being handled
+    - `options`: Original options as they were passed into the relevant function that triggered the action
+    - `'beforeEdit'` actions have additional context properties:
+      - `doc` - The document to be written
+      - `op` - The op that represents the changes that will be made to the document
+      - `query` - A filter that will be used to lookup the document that is about to be edited
+    - `'beforeSnapshotLookup'` actions have additional context properties:
+      - `query` - A filter that will be used to lookup the snapshot
 
 ### Limitations
 
@@ -226,26 +250,26 @@ Mongo errors are passed back directly. Additional error codes:
 
 #### 4100 -- Bad request - DB
 
-* 4101 -- Invalid op version
-* 4102 -- Invalid collection name
-* 4103 -- $where queries disabled
-* 4104 -- $mapReduce queries disabled
-* 4105 -- $aggregate queries disabled
-* 4106 -- $query property deprecated in queries
-* 4107 -- Malformed query operator
-* 4108 -- Only one collection operation allowed
-* 4109 -- Only one cursor operation allowed
-* 4110 -- Cursor methods can't run after collection method
+- 4101 -- Invalid op version
+- 4102 -- Invalid collection name
+- 4103 -- $where queries disabled
+- 4104 -- $mapReduce queries disabled
+- 4105 -- $aggregate queries disabled
+- 4106 -- $query property deprecated in queries
+- 4107 -- Malformed query operator
+- 4108 -- Only one collection operation allowed
+- 4109 -- Only one cursor operation allowed
+- 4110 -- Cursor methods can't run after collection method
 
 #### 5100 -- Internal error - DB
 
-* 5101 -- Already closed
-* 5102 -- Snapshot missing last operation field
-* 5103 -- Missing ops from requested version
-* 5104 -- Failed to parse query
-
+- 5101 -- Already closed
+- 5102 -- Snapshot missing last operation field
+- 5103 -- Missing ops from requested version
+- 5104 -- Failed to parse query
 
 ## MIT License
+
 Copyright (c) 2015 by Joseph Gentle and Nate Smith
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
