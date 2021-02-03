@@ -325,7 +325,7 @@ ShareDbMongo.prototype.getSnapshotBulk = function(collectionName, ids, fields, o
     if (err) return callback(err);
     var query = {_id: {$in: ids}};
     var projection = getProjection(fields, options);
-    var request = createRequestForMiddleware(collectionName, ids, null, null, options);
+    var request = createRequestForMiddleware(options, collectionName);
     request.query = query;
     self.trigger(self.MIDDLEWARE_ACTIONS.beforeSnapshotLookup, request, function(middlewareErr) {
       if (middlewareErr) return callback(middlewareErr);

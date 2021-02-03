@@ -31,6 +31,39 @@ describe('mongo db middleware', function() {
   });
 
   describe('beforeEdit', function() {
+    it('has the expected properties on the request object', function(done) {
+      var db = this.db;
+      db.use('beforeEdit', function(request, next) {
+        expect(request).to.have.all.keys([
+          'action',
+          'collectionName',
+          'doc',
+          'op',
+          'options',
+          'query'
+        ]);
+        expect(request.action).to.equal('beforeEdit');
+        expect(request.collectionName).to.equal('testcollection');
+        expect(request.doc.foo).to.equal('fuzz');
+        expect(request.op.op).to.exist;
+        expect(request.options.testOptions).to.equal('yes');
+        expect(request.query._id).to.equal('test1');
+        next();
+        done();
+      });
+
+      var snapshot = {type: 'json0', id: 'test1', v: 1, data: {foo: 'bar'}};
+      var editOp = {v: 2, op: [{p: ['foo'], oi: 'bar', oi: 'baz'}], m: {ts: Date.now()}};
+      var newSnapshot = {type: 'json0', id: 'test1', v: 2, data: {foo: 'fuzz'}};
+
+      db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, null, function(err) {
+        if (err) return done(err);
+        db.commit('testcollection', snapshot.id, editOp, newSnapshot, {testOptions: 'yes'}, function(err) {
+          if (err) return done(err);
+        });
+      });
+    });
+
     it('should augment query filter and write to the document when commit is called', function(done) {
       var db = this.db;
       // Augment the query. The original query looks up the document by id, wheras this middleware
@@ -54,7 +87,6 @@ describe('mongo db middleware', function() {
       });
 
       var snapshot = {type: 'json0', id: 'test1', v: 1, data: {foo: 'bar'}};
-
       var editOp = {v: 2, op: [{p: ['foo'], oi: 'bar', oi: 'baz'}], m: {ts: Date.now()}};
       var newSnapshot = {type: 'json0', id: 'test1', v: 2, data: {foo: 'fuzz'}};
 
@@ -98,6 +130,60 @@ describe('mongo db middleware', function() {
   });
 
   describe('beforeSnapshotLookup', function() {
+    it('has the expected properties on the request object before getting a single snapshot', function(done) {
+      var db = this.db;
+      db.use('beforeSnapshotLookup', function(request, next) {
+        expect(request).to.have.all.keys([
+          'action',
+          'collectionName',
+          'options',
+          'query'
+        ]);
+        expect(request.action).to.equal('beforeSnapshotLookup');
+        expect(request.collectionName).to.equal('testcollection');
+        expect(request.options.testOptions).to.equal('yes');
+        expect(request.query._id).to.equal('test1');
+        next();
+        done();
+      });
+
+      var snapshot = {type: 'json0', id: 'test1', v: 1, data: {foo: 'bar'}};
+      db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, null, function(err) {
+        if (err) return done(err);
+        db.getSnapshot('testcollection', 'test1', null, {testOptions: 'yes'}, function(err, doc) {
+          if (err) return done(err);
+          expect(doc).to.exist;
+        });
+      });
+    });
+
+    it('has the expected properties on the request object before getting bulk snapshots', function(done) {
+      var db = this.db;
+      db.use('beforeSnapshotLookup', function(request, next) {
+        expect(request).to.have.all.keys([
+          'action',
+          'collectionName',
+          'options',
+          'query'
+        ]);
+        expect(request.action).to.equal('beforeSnapshotLookup');
+        expect(request.collectionName).to.equal('testcollection');
+        expect(request.options.testOptions).to.equal('yes');
+        expect(request.query._id).to.deep.equal({$in: ['test1']});
+        next();
+        done();
+      });
+
+      var snapshot = {type: 'json0', id: 'test1', v: 1, data: {foo: 'bar'}};
+      db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, null, function(err) {
+        if (err) return done(err);
+        db.getSnapshotBulk('testcollection', ['test1'], null, {testOptions: 'yes'}, function(err, doc) {
+          if (err) return done(err);
+          expect(doc).to.exist;
+        });
+      });
+    });
+
     it('should augment the query when getSnapshot is called', function(done) {
       var db = this.db;
 
