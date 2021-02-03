@@ -266,7 +266,7 @@ ShareDbMongo.prototype._writeSnapshot = function(request, callback) {
   var self = this;
   this.getCollection(request.collectionName, function(err, collection) {
     if (err) return callback(err);
-    var doc = castToDoc(request.id, request.snapshot, request.opLink);
+    var doc = castToDoc(request.id, request.snapshot, request.opId);
     if (doc._v === 1) {
       collection.insertOne(doc, function(err) {
         if (err) {
