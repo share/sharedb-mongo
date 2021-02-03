@@ -194,6 +194,8 @@ Middlewares let you hook into the `sharedb-mongo` pipeline for certain actions. 
 
 The original intent for middleware on `sharedb-mongo` is to support running in a sharded `MongoDB` cluster to satisfy the requirements on shard keys for versions 4.2 and greater of `MongoDB`. For more information see [the MongoDB docs](https://docs.mongodb.com/manual/core/sharding-shard-key/#shard-keys).
 
+#### Usage
+
 `share.use(action, fn)`
 Register a new middleware.
 
@@ -202,7 +204,7 @@ Register a new middleware.
   - `'beforeEdit'`: directly before the call to replace a document, can include edits as well as deletions
   - `'beforeSnapshotLookup'`: directly before the call to issue a query for snapshots by ID
 - `fn` _(Function(context, callback))_
-  Call this function at the time specified by `action`.
+  Call this function at the time specified by `action`
   - `context` will always have the following properties:
     - `action`: The action this middleware is handling
     - `collectionName`: The collection name being handled
