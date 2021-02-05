@@ -190,7 +190,7 @@ current version.
 
 ### Middlewares
 
-Middlewares let you hook into the `sharedb-mongo` pipeline for certain actions. They are distinct from [middleware in `ShareDB`](https://github.com/share/sharedb) as they are closer the concrete calls that are made to `MongoDB` itself.
+Middlewares let you hook into the `sharedb-mongo` pipeline for certain actions. They are distinct from [middleware in `ShareDB`](https://github.com/share/sharedb) as they are closer to the concrete calls that are made to `MongoDB` itself.
 
 The original intent for middleware on `sharedb-mongo` is to support running in a sharded `MongoDB` cluster to satisfy the requirements on shard keys for versions 4.2 and greater of `MongoDB`. For more information see [the MongoDB docs](https://docs.mongodb.com/manual/core/sharding-shard-key/#shard-keys).
 
