@@ -234,7 +234,7 @@ ShareDbMongo.prototype.commit = function(collectionName, id, op, snapshot, optio
 };
 
 function createRequestForMiddleware(options, collectionName, op) {
-  // Create a new request object which will be passed to helper functions and _middleware
+  // Create a new request object which will be passed to helper functions and middleware
   var request = {
     options: options,
     collectionName: collectionName
