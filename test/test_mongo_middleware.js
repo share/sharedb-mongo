@@ -16,23 +16,22 @@ function create(callback) {
 };
 
 describe('mongo db middleware', function() {
+  var db;
+
   beforeEach(function(done) {
-    var self = this;
-    create(function(err, db, mongo) {
+    create(function(err, createdDb, createdMongo) {
       if (err) return done(err);
-      self.db = db;
-      self.mongo = mongo;
+      db = createdDb;
       done();
     });
   });
 
   afterEach(function(done) {
-    this.db.close(done);
+    db.close(done);
   });
 
   describe('beforeEdit', function() {
     it('has the expected properties on the request object', function(done) {
-      var db = this.db;
       db.use('beforeEdit', function(request, next) {
         expect(request).to.have.all.keys([
           'action',
@@ -65,7 +64,6 @@ describe('mongo db middleware', function() {
     });
 
     it('should augment query filter and write to the document when commit is called', function(done) {
-      var db = this.db;
       // Augment the query. The original query looks up the document by id, wheras this middleware
       // changes it to use the `foo` property. The end result still returns the same document. The next
       // middleware ensures we attached it to the request.
@@ -92,11 +90,11 @@ describe('mongo db middleware', function() {
 
       db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, null, function(err) {
         if (err) return done(err);
-        expectDocumentToContainFoo(db, 'bar', function() {
+        expectDocumentToContainFoo('bar', function() {
           db.commit('testcollection', snapshot.id, editOp, newSnapshot, null, function(err) {
             if (err) return done(err);
             // Ensure the value is updated as expected
-            expectDocumentToContainFoo(db, 'baz', done);
+            expectDocumentToContainFoo('baz', done);
           });
         });
       });
@@ -104,7 +102,6 @@ describe('mongo db middleware', function() {
   });
 
   it('should augment the written document when commit is called', function(done) {
-    var db = this.db;
     // Change the written value of foo to be `fuzz`
     db.use('beforeEdit', function(request, next) {
       request.doc.foo = 'fuzz';
@@ -119,11 +116,11 @@ describe('mongo db middleware', function() {
 
     db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, null, function(err) {
       if (err) return done(err);
-      expectDocumentToContainFoo(db, 'bar', function() {
+      expectDocumentToContainFoo('bar', function() {
         db.commit('testcollection', snapshot.id, editOp, newSnapshot, null, function(err) {
           if (err) return done(err);
           // Ensure the value is updated as expected
-          expectDocumentToContainFoo(db, 'fuzz', done);
+          expectDocumentToContainFoo('fuzz', done);
         });
       });
     });
@@ -131,7 +128,6 @@ describe('mongo db middleware', function() {
 
   describe('beforeSnapshotLookup', function() {
     it('has the expected properties on the request object before getting a single snapshot', function(done) {
-      var db = this.db;
       db.use('beforeSnapshotLookup', function(request, next) {
         expect(request).to.have.all.keys([
           'action',
@@ -158,7 +154,6 @@ describe('mongo db middleware', function() {
     });
 
     it('has the expected properties on the request object before getting bulk snapshots', function(done) {
-      var db = this.db;
       db.use('beforeSnapshotLookup', function(request, next) {
         expect(request).to.have.all.keys([
           'action',
@@ -185,8 +180,6 @@ describe('mongo db middleware', function() {
     });
 
     it('should augment the query when getSnapshot is called', function(done) {
-      var db = this.db;
-
       var snapshots = [
         {type: 'json0', id: 'test1', v: 1, data: {foo: 'bar'}},
         {type: 'json0', id: 'test2', v: 1, data: {foo: 'baz'}}
@@ -220,8 +213,6 @@ describe('mongo db middleware', function() {
     });
 
     it('should augment the query when getSnapshotBulk is called', function(done) {
-      var db = this.db;
-
       var snapshots = [
         {type: 'json0', id: 'test1', v: 1, data: {foo: 'bar'}},
         {type: 'json0', id: 'test2', v: 1, data: {foo: 'baz'}}
@@ -253,7 +244,7 @@ describe('mongo db middleware', function() {
     });
   });
 
-  function expectDocumentToContainFoo(db, valueOfFoo, cb) {
+  function expectDocumentToContainFoo(valueOfFoo, cb) {
     var query = {_id: 'test1'};
 
     db.query('testcollection', query, null, null, function(err, results) {
