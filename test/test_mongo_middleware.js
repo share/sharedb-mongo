@@ -30,6 +30,33 @@ describe('mongo db middleware', function() {
     db.close(done);
   });
 
+  describe('error handling', function() {
+    it('throws error when no action is given', function() {
+      function invalidAction() {
+        db.use(null, function(request, next) {
+          next();
+        });
+      }
+      expect(invalidAction).to.throw();
+    });
+
+    it('throws error when no handler is given', function() {
+      function invalidAction() {
+        db.use('someAction');
+      }
+      expect(invalidAction).to.throw();
+    });
+
+    it('throws error on unrecognized action name', function() {
+      function invalidAction() {
+        db.use('someAction', function(request, next) {
+          next();
+        });
+      }
+      expect(invalidAction).to.throw();
+    });
+  });
+
   describe('beforeEdit', function() {
     it('has the expected properties on the request object', function(done) {
       db.use('beforeEdit', function(request, next) {

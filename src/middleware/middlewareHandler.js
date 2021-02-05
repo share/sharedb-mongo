@@ -22,6 +22,12 @@ MiddlewareHandler.prototype.use = function(action, fn) {
     }
     return this;
   }
+  if (!action) throw new Error('Expected action to be defined');
+  if (!fn) throw new Error('Expected fn to be defined');
+  if (!Object.values(MIDDLEWARE_ACTIONS).includes(action)) {
+    throw new Error('Unrecognized action name ' + action);
+  }
+
   var fns = this._middleware[action] || (this._middleware[action] = []);
   fns.push(fn);
   return this;
