@@ -3,6 +3,8 @@ var expect = require('chai').expect;
 var ShareDbMongo = require('..');
 
 var mongoUrl = process.env.TEST_MONGO_URL || 'mongodb://localhost:27017/test';
+var BEFORE_EDIT = ShareDbMongo.MiddlewareActions.beforeEdit;
+var BEFORE_SNAPSHOT_LOOKUP = ShareDbMongo.MiddlewareActions.beforeSnapshotLookup;
 
 function create(callback) {
   var db = new ShareDbMongo(mongoUrl);
@@ -19,7 +21,7 @@ describe('mongo db middleware', function() {
   var db;
 
   beforeEach(function(done) {
-    create(function(err, createdDb, createdMongo) {
+    create(function(err, createdDb) {
       if (err) return done(err);
       db = createdDb;
       done();
@@ -33,7 +35,7 @@ describe('mongo db middleware', function() {
   describe('error handling', function() {
     it('throws error when no action is given', function() {
       function invalidAction() {
-        db.use(null, function(request, next) {
+        db.use(null, function(_request, next) {
           next();
         });
       }
@@ -49,7 +51,7 @@ describe('mongo db middleware', function() {
 
     it('throws error on unrecognized action name', function() {
       function invalidAction() {
-        db.use('someAction', function(request, next) {
+        db.use('someAction', function(_request, next) {
           next();
         });
       }
@@ -57,9 +59,9 @@ describe('mongo db middleware', function() {
     });
   });
 
-  describe('beforeEdit', function() {
+  describe(BEFORE_EDIT, function() {
     it('has the expected properties on the request object', function(done) {
-      db.use('beforeEdit', function(request, next) {
+      db.use(BEFORE_EDIT, function(request, next) {
         expect(request).to.have.all.keys([
           'action',
           'collectionName',
@@ -68,7 +70,7 @@ describe('mongo db middleware', function() {
           'options',
           'query'
         ]);
-        expect(request.action).to.equal('beforeEdit');
+        expect(request.action).to.equal(BEFORE_EDIT);
         expect(request.collectionName).to.equal('testcollection');
         expect(request.doc.foo).to.equal('fuzz');
         expect(request.op.op).to.exist;
@@ -96,13 +98,13 @@ describe('mongo db middleware', function() {
       // middleware ensures we attached it to the request.
       // We can't truly change which document is returned from the query because MongoDB will not allow
       // the immutable fields such as `_id` to be changed.
-      db.use('beforeEdit', function(request, next) {
+      db.use(BEFORE_EDIT, function(request, next) {
         request.query.foo = 'bar';
         next();
       });
       // Attach this middleware to check that the original one is passing the context
       // correctly. Commit will be called after this.
-      db.use('beforeEdit', function(request, next) {
+      db.use(BEFORE_EDIT, function(request, next) {
         expect(request.query).to.deep.equal({
           _id: 'test1',
           _v: 1,
@@ -130,7 +132,7 @@ describe('mongo db middleware', function() {
 
   it('should augment the written document when commit is called', function(done) {
     // Change the written value of foo to be `fuzz`
-    db.use('beforeEdit', function(request, next) {
+    db.use(BEFORE_EDIT, function(request, next) {
       request.doc.foo = 'fuzz';
       next();
     });
@@ -153,16 +155,16 @@ describe('mongo db middleware', function() {
     });
   });
 
-  describe('beforeSnapshotLookup', function() {
+  describe(BEFORE_SNAPSHOT_LOOKUP, function() {
     it('has the expected properties on the request object before getting a single snapshot', function(done) {
-      db.use('beforeSnapshotLookup', function(request, next) {
+      db.use(BEFORE_SNAPSHOT_LOOKUP, function(request, next) {
         expect(request).to.have.all.keys([
           'action',
           'collectionName',
           'options',
           'query'
         ]);
-        expect(request.action).to.equal('beforeSnapshotLookup');
+        expect(request.action).to.equal(BEFORE_SNAPSHOT_LOOKUP);
         expect(request.collectionName).to.equal('testcollection');
         expect(request.options.testOptions).to.equal('yes');
         expect(request.query._id).to.equal('test1');
@@ -181,14 +183,14 @@ describe('mongo db middleware', function() {
     });
 
     it('has the expected properties on the request object before getting bulk snapshots', function(done) {
-      db.use('beforeSnapshotLookup', function(request, next) {
+      db.use(BEFORE_SNAPSHOT_LOOKUP, function(request, next) {
         expect(request).to.have.all.keys([
           'action',
           'collectionName',
           'options',
           'query'
         ]);
-        expect(request.action).to.equal('beforeSnapshotLookup');
+        expect(request.action).to.equal(BEFORE_SNAPSHOT_LOOKUP);
         expect(request.collectionName).to.equal('testcollection');
         expect(request.options.testOptions).to.equal('yes');
         expect(request.query._id).to.deep.equal({$in: ['test1']});
@@ -223,7 +225,7 @@ describe('mongo db middleware', function() {
           });
 
           // Change the query to look for baz and not bar
-          db.use('beforeSnapshotLookup', function(request, next) {
+          db.use(BEFORE_SNAPSHOT_LOOKUP, function(request, next) {
             request.query = {_id: 'test2'};
             next();
           });
@@ -255,7 +257,7 @@ describe('mongo db middleware', function() {
           expect(docs.test2.data.foo).to.equal('baz');
 
           // Change the query to look for baz and not bar
-          db.use('beforeSnapshotLookup', function(request, next) {
+          db.use(BEFORE_SNAPSHOT_LOOKUP, function(request, next) {
             request.query = {_id: {$in: ['test2']}};
             next();
           });
