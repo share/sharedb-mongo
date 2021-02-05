@@ -65,14 +65,14 @@ describe('mongo db middleware', function() {
         expect(request).to.have.all.keys([
           'action',
           'collectionName',
-          'doc',
+          'documentToWrite',
           'op',
           'options',
           'query'
         ]);
         expect(request.action).to.equal(BEFORE_EDIT);
         expect(request.collectionName).to.equal('testcollection');
-        expect(request.doc.foo).to.equal('fuzz');
+        expect(request.documentToWrite.foo).to.equal('fuzz');
         expect(request.op.op).to.exist;
         expect(request.options.testOptions).to.equal('yes');
         expect(request.query._id).to.equal('test1');
@@ -133,7 +133,7 @@ describe('mongo db middleware', function() {
   it('should augment the written document when commit is called', function(done) {
     // Change the written value of foo to be `fuzz`
     db.use(BEFORE_EDIT, function(request, next) {
-      request.doc.foo = 'fuzz';
+      request.documentToWrite.foo = 'fuzz';
       next();
     });
 

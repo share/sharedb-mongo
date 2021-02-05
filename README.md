@@ -210,7 +210,7 @@ Register a new middleware.
     - `collectionName`: The collection name being handled
     - `options`: Original options as they were passed into the relevant function that triggered the action
     - `'beforeEdit'` actions have additional context properties:
-      - `doc` - The document to be written
+      - `documentToWrite` - The document to be written
       - `op` - The op that represents the changes that will be made to the document
       - `query` - A filter that will be used to lookup the document that is about to be edited
     - `'beforeSnapshotLookup'` actions have additional context properties:

@@ -268,9 +268,9 @@ ShareDbMongo.prototype._writeSnapshot = function(request, id, snapshot, opId, ca
   var self = this;
   this.getCollection(request.collectionName, function(err, collection) {
     if (err) return callback(err);
-    request.doc = castToDoc(id, snapshot, opId);
-    if (request.doc._v === 1) {
-      collection.insertOne(request.doc, function(err) {
+    request.documentToWrite = castToDoc(id, snapshot, opId);
+    if (request.documentToWrite._v === 1) {
+      collection.insertOne(request.documentToWrite, function(err) {
         if (err) {
           // Return non-success instead of duplicate key error, since this is
           // expected to occur during simultaneous creates on the same id
@@ -282,12 +282,12 @@ ShareDbMongo.prototype._writeSnapshot = function(request, id, snapshot, opId, ca
         callback(null, true);
       });
     } else {
-      request.query = {_id: id, _v: request.doc._v - 1};
+      request.query = {_id: id, _v: request.documentToWrite._v - 1};
       self._middleware.trigger(MiddlewareHandler.Actions.beforeEdit, request, function(middlewareErr) {
         if (middlewareErr) {
           return callback(middlewareErr);
         }
-        collection.replaceOne(request.query, request.doc, function(err, result) {
+        collection.replaceOne(request.query, request.documentToWrite, function(err, result) {
           if (err) return callback(err);
           var succeeded = !!result.modifiedCount;
           callback(null, succeeded);
