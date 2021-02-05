@@ -2,6 +2,7 @@ var async = require('async');
 var mongodb = require('mongodb');
 var DB = require('sharedb').DB;
 var OpLinkValidator = require('./op-link-validator');
+var MiddlewareHandler = require('./src/middlewareHandler');
 
 module.exports = ShareDbMongo;
 
@@ -67,7 +68,7 @@ function ShareDbMongo(mongo, options) {
     throw new Error('deprecated: pass mongo as url string or function with callback');
   }
 
-  this.middleware = {};
+  this._middleware = new MiddlewareHandler();
 };
 
 ShareDbMongo.prototype = Object.create(DB.prototype);
@@ -233,7 +234,7 @@ ShareDbMongo.prototype.commit = function(collectionName, id, op, snapshot, optio
 };
 
 function createRequestForMiddleware(options, collectionName, op) {
-  // Create a new request object which will be passed to helper functions and middleware
+  // Create a new request object which will be passed to helper functions and _middleware
   var request = {
     options: options,
     collectionName: collectionName
@@ -282,7 +283,7 @@ ShareDbMongo.prototype._writeSnapshot = function(request, id, snapshot, opId, ca
       });
     } else {
       request.query = {_id: id, _v: request.doc._v - 1};
-      self.trigger(self.MIDDLEWARE_ACTIONS.beforeEdit, request, function(middlewareErr) {
+      self._middleware.trigger(MiddlewareHandler.Actions.beforeEdit, request, function(middlewareErr) {
         if (middlewareErr) {
           return callback(middlewareErr);
         }
@@ -307,7 +308,7 @@ ShareDbMongo.prototype.getSnapshot = function(collectionName, id, fields, option
     var projection = getProjection(fields, options);
     var request = createRequestForMiddleware(options, collectionName);
     request.query = query;
-    self.trigger(self.MIDDLEWARE_ACTIONS.beforeSnapshotLookup, request, function(middlewareErr) {
+    self._middleware.trigger(MiddlewareHandler.Actions.beforeSnapshotLookup, request, function(middlewareErr) {
       if (middlewareErr) return callback(middlewareErr);
 
       collection.find(request.query).limit(1).project(projection).next(function(err, doc) {
@@ -327,7 +328,7 @@ ShareDbMongo.prototype.getSnapshotBulk = function(collectionName, ids, fields, o
     var projection = getProjection(fields, options);
     var request = createRequestForMiddleware(options, collectionName);
     request.query = query;
-    self.trigger(self.MIDDLEWARE_ACTIONS.beforeSnapshotLookup, request, function(middlewareErr) {
+    self._middleware.trigger(MiddlewareHandler.Actions.beforeSnapshotLookup, request, function(middlewareErr) {
       if (middlewareErr) return callback(middlewareErr);
 
       collection.find(request.query).project(projection).toArray(function(err, docs) {
@@ -1611,4 +1612,10 @@ ShareDbMongo.parseQueryError = function(err) {
   return err;
 };
 
-require('./src/middleware')(ShareDbMongo);
+// Middleware
+
+ShareDbMongo.prototype.use = function(action, fn) {
+  this._middleware.use(action, fn);
+};
+
+ShareDbMongo.MiddlewareActions = MiddlewareHandler.Actions;
