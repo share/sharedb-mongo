@@ -202,7 +202,7 @@ Register a new middleware.
 - `action` _(String)_
   One of:
   - `'beforeOverwrite'`: directly before the call to replace a document, can include edits as well as deletions
-  - `'beforeSnapshotLookup'`: directly before the call to issue a query for snapshots by ID
+  - `'beforeSnapshotLookup'`: directly before the call to issue a query for one or more snapshots by ID
 - `fn` _(Function(context, callback))_
   Call this function at the time specified by `action`
   - `context` will always have the following properties:
@@ -214,7 +214,7 @@ Register a new middleware.
       - `op` - The op that represents the changes that will be made to the document
       - `query` - A filter that will be used to lookup the document that is about to be edited
     - `'beforeSnapshotLookup'` actions have additional context properties:
-      - `query` - A filter that will be used to lookup the snapshot
+      - `query` - A filter that will be used to lookup the snapshot. When a single snapshot is looked up the query will take the shape `{_id: docId}` while a bulk lookup by a list of IDs will resemble `{_id: {$in: docIdsArray}}`.
 
 ### Limitations
 
