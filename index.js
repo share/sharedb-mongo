@@ -2,6 +2,7 @@ var async = require('async');
 var mongodb = require('mongodb');
 var DB = require('sharedb').DB;
 var OpLinkValidator = require('./op-link-validator');
+var MiddlewareHandler = require('./src/middleware/middlewareHandler');
 
 module.exports = ShareDbMongo;
 
@@ -66,6 +67,8 @@ function ShareDbMongo(mongo, options) {
   } else {
     throw new Error('deprecated: pass mongo as url string or function with callback');
   }
+
+  this._middleware = new MiddlewareHandler();
 };
 
 ShareDbMongo.prototype = Object.create(DB.prototype);
@@ -215,19 +218,30 @@ ShareDbMongo.prototype.close = function(callback) {
 
 ShareDbMongo.prototype.commit = function(collectionName, id, op, snapshot, options, callback) {
   var self = this;
+  var request = createRequestForMiddleware(options, collectionName, op);
   this._writeOp(collectionName, id, op, snapshot, function(err, result) {
     if (err) return callback(err);
     var opId = result.insertedId;
-    self._writeSnapshot(collectionName, id, snapshot, opId, function(err, succeeded) {
+    self._writeSnapshot(request, id, snapshot, opId, function(err, succeeded) {
       if (succeeded) return callback(err, succeeded);
       // Cleanup unsuccessful op if snapshot write failed. This is not
       // neccessary for data correctness, but it gets rid of clutter
-      self._deleteOp(collectionName, opId, function(removeErr) {
+      self._deleteOp(request.collectionName, opId, function(removeErr) {
         callback(err || removeErr, succeeded);
       });
     });
   });
 };
+
+function createRequestForMiddleware(options, collectionName, op) {
+  // Create a new request object which will be passed to helper functions and middleware
+  var request = {
+    options: options,
+    collectionName: collectionName
+  };
+  if (op) request.op = op;
+  return request;
+}
 
 ShareDbMongo.prototype._writeOp = function(collectionName, id, op, snapshot, callback) {
   if (typeof op.v !== 'number') {
@@ -250,12 +264,13 @@ ShareDbMongo.prototype._deleteOp = function(collectionName, opId, callback) {
   });
 };
 
-ShareDbMongo.prototype._writeSnapshot = function(collectionName, id, snapshot, opLink, callback) {
-  this.getCollection(collectionName, function(err, collection) {
+ShareDbMongo.prototype._writeSnapshot = function(request, id, snapshot, opId, callback) {
+  var self = this;
+  this.getCollection(request.collectionName, function(err, collection) {
     if (err) return callback(err);
-    var doc = castToDoc(id, snapshot, opLink);
-    if (doc._v === 1) {
-      collection.insertOne(doc, function(err) {
+    request.documentToWrite = castToDoc(id, snapshot, opId);
+    if (request.documentToWrite._v === 1) {
+      collection.insertOne(request.documentToWrite, function(err) {
         if (err) {
           // Return non-success instead of duplicate key error, since this is
           // expected to occur during simultaneous creates on the same id
@@ -267,10 +282,16 @@ ShareDbMongo.prototype._writeSnapshot = function(collectionName, id, snapshot, o
         callback(null, true);
       });
     } else {
-      collection.replaceOne({_id: id, _v: doc._v - 1}, doc, function(err, result) {
-        if (err) return callback(err);
-        var succeeded = !!result.modifiedCount;
-        callback(null, succeeded);
+      request.query = {_id: id, _v: request.documentToWrite._v - 1};
+      self._middleware.trigger(MiddlewareHandler.Actions.beforeOverwrite, request, function(middlewareErr) {
+        if (middlewareErr) {
+          return callback(middlewareErr);
+        }
+        collection.replaceOne(request.query, request.documentToWrite, function(err, result) {
+          if (err) return callback(err);
+          var succeeded = !!result.modifiedCount;
+          callback(null, succeeded);
+        });
       });
     }
   });
@@ -280,36 +301,50 @@ ShareDbMongo.prototype._writeSnapshot = function(collectionName, id, snapshot, o
 // **** Snapshot methods
 
 ShareDbMongo.prototype.getSnapshot = function(collectionName, id, fields, options, callback) {
+  var self = this;
   this.getCollection(collectionName, function(err, collection) {
     if (err) return callback(err);
     var query = {_id: id};
     var projection = getProjection(fields, options);
-    collection.find(query).limit(1).project(projection).next(function(err, doc) {
-      if (err) return callback(err);
-      var snapshot = (doc) ? castToSnapshot(doc) : new MongoSnapshot(id, 0, null, undefined);
-      callback(null, snapshot);
+    var request = createRequestForMiddleware(options, collectionName);
+    request.query = query;
+    self._middleware.trigger(MiddlewareHandler.Actions.beforeSnapshotLookup, request, function(middlewareErr) {
+      if (middlewareErr) return callback(middlewareErr);
+
+      collection.find(request.query).limit(1).project(projection).next(function(err, doc) {
+        if (err) return callback(err);
+        var snapshot = (doc) ? castToSnapshot(doc) : new MongoSnapshot(id, 0, null, undefined);
+        callback(null, snapshot);
+      });
     });
   });
 };
 
 ShareDbMongo.prototype.getSnapshotBulk = function(collectionName, ids, fields, options, callback) {
+  var self = this;
   this.getCollection(collectionName, function(err, collection) {
     if (err) return callback(err);
     var query = {_id: {$in: ids}};
     var projection = getProjection(fields, options);
-    collection.find(query).project(projection).toArray(function(err, docs) {
-      if (err) return callback(err);
-      var snapshotMap = {};
-      for (var i = 0; i < docs.length; i++) {
-        var snapshot = castToSnapshot(docs[i]);
-        snapshotMap[snapshot.id] = snapshot;
-      }
-      for (var i = 0; i < ids.length; i++) {
-        var id = ids[i];
-        if (snapshotMap[id]) continue;
-        snapshotMap[id] = new MongoSnapshot(id, 0, null, undefined);
-      }
-      callback(null, snapshotMap);
+    var request = createRequestForMiddleware(options, collectionName);
+    request.query = query;
+    self._middleware.trigger(MiddlewareHandler.Actions.beforeSnapshotLookup, request, function(middlewareErr) {
+      if (middlewareErr) return callback(middlewareErr);
+
+      collection.find(request.query).project(projection).toArray(function(err, docs) {
+        if (err) return callback(err);
+        var snapshotMap = {};
+        for (var i = 0; i < docs.length; i++) {
+          var snapshot = castToSnapshot(docs[i]);
+          snapshotMap[snapshot.id] = snapshot;
+        }
+        for (var i = 0; i < ids.length; i++) {
+          var id = ids[i];
+          if (snapshotMap[id]) continue;
+          snapshotMap[id] = new MongoSnapshot(id, 0, null, undefined);
+        }
+        callback(null, snapshotMap);
+      });
     });
   });
 };
@@ -1576,3 +1611,11 @@ ShareDbMongo.parseQueryError = function(err) {
   err.code = 5104;
   return err;
 };
+
+// Middleware
+
+ShareDbMongo.prototype.use = function(action, fn) {
+  this._middleware.use(action, fn);
+};
+
+ShareDbMongo.MiddlewareActions = MiddlewareHandler.Actions;
