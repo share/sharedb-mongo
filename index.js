@@ -283,7 +283,7 @@ ShareDbMongo.prototype._writeSnapshot = function(request, id, snapshot, opId, ca
       });
     } else {
       request.query = {_id: id, _v: request.documentToWrite._v - 1};
-      self._middleware.trigger(MiddlewareHandler.Actions.beforeEdit, request, function(middlewareErr) {
+      self._middleware.trigger(MiddlewareHandler.Actions.beforeOverwrite, request, function(middlewareErr) {
         if (middlewareErr) {
           return callback(middlewareErr);
         }

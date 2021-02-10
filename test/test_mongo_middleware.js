@@ -3,7 +3,7 @@ var expect = require('chai').expect;
 var ShareDbMongo = require('..');
 
 var mongoUrl = process.env.TEST_MONGO_URL || 'mongodb://localhost:27017/test';
-var BEFORE_EDIT = ShareDbMongo.MiddlewareActions.beforeEdit;
+var BEFORE_EDIT = ShareDbMongo.MiddlewareActions.beforeOverwrite;
 var BEFORE_SNAPSHOT_LOOKUP = ShareDbMongo.MiddlewareActions.beforeSnapshotLookup;
 
 function create(callback) {

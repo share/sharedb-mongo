@@ -7,7 +7,7 @@ function MiddlewareHandler() {
 /**
 * Add middleware to an action or array of actions
 *
-* @param action The action to use from MIDDLEWARE_ACTIONS (e.g. 'beforeEdit')
+* @param action The action to use from MIDDLEWARE_ACTIONS (e.g. 'beforeOverwrite')
 * @param fn The function to call when this middleware is triggered
 * The fn receives a request object with information on the triggered action (e.g. the snapshot to write)
 * and a next function to call once the middleware is complete
@@ -40,7 +40,7 @@ MiddlewareHandler.prototype.use = function(action, fn) {
  * invoked we call `callback` with `null` and the modified request. If one of
  * the middleware resturns an error the callback is called with that error.
  *
- * @param action The action to trigger from MIDDLEWARE_ACTIONS (e.g. 'beforeEdit')
+ * @param action The action to trigger from MIDDLEWARE_ACTIONS (e.g. 'beforeOverwrite')
  * @param request Request details such as the snapshot to write, depends on the triggered action
  * @param callback Function to call once the middleware has been processed.
  */

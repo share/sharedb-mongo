@@ -201,7 +201,7 @@ Register a new middleware.
 
 - `action` _(String)_
   One of:
-  - `'beforeEdit'`: directly before the call to replace a document, can include edits as well as deletions
+  - `'beforeOverwrite'`: directly before the call to replace a document, can include edits as well as deletions
   - `'beforeSnapshotLookup'`: directly before the call to issue a query for snapshots by ID
 - `fn` _(Function(context, callback))_
   Call this function at the time specified by `action`
@@ -209,7 +209,7 @@ Register a new middleware.
     - `action`: The action this middleware is handling
     - `collectionName`: The collection name being handled
     - `options`: Original options as they were passed into the relevant function that triggered the action
-    - `'beforeEdit'` actions have additional context properties:
+    - `'beforeOverwrite'` actions have additional context properties:
       - `documentToWrite` - The document to be written
       - `op` - The op that represents the changes that will be made to the document
       - `query` - A filter that will be used to lookup the document that is about to be edited
