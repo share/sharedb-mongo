@@ -212,7 +212,7 @@ Register a new middleware.
     - `'beforeOverwrite'` actions have additional context properties:
       - `documentToWrite` - The document to be written
       - `op` - The op that represents the changes that will be made to the document
-      - `query` - A filter that will be used to lookup the document that is about to be edited
+      - `query` - A filter that will be used to lookup the document that is about to be edited, which should always include an ID and snapshot version e.g. `{_id: 'uuid', _v: 1}`
     - `'beforeSnapshotLookup'` actions have additional context properties:
       - `query` - A filter that will be used to lookup the snapshot. When a single snapshot is looked up the query will take the shape `{_id: docId}` while a bulk lookup by a list of IDs will resemble `{_id: {$in: docIdsArray}}`.
 
