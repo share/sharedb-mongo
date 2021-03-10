@@ -4,6 +4,7 @@ var ShareDbMongo = require('..');
 
 var mongoUrl = process.env.TEST_MONGO_URL || 'mongodb://localhost:27017/test';
 var BEFORE_EDIT = ShareDbMongo.MiddlewareActions.beforeOverwrite;
+var BEFORE_CREATE = ShareDbMongo.MiddlewareActions.beforeCreate;
 var BEFORE_SNAPSHOT_LOOKUP = ShareDbMongo.MiddlewareActions.beforeSnapshotLookup;
 
 function create(callback) {
@@ -151,6 +152,48 @@ describe('mongo db middleware', function() {
           // Ensure the value is updated as expected
           expectDocumentToContainFoo('fuzz', done);
         });
+      });
+    });
+  });
+
+  describe(BEFORE_CREATE, function() {
+    it('has the expected properties on the request object', function(done) {
+      db.use(BEFORE_CREATE, function(request, next) {
+        expect(request).to.have.all.keys([
+          'action',
+          'collectionName',
+          'documentToWrite',
+          'op',
+          'options'
+        ]);
+        expect(request.action).to.equal(BEFORE_CREATE);
+        expect(request.collectionName).to.equal('testcollection');
+        expect(request.documentToWrite.foo).to.equal('bar');
+        expect(request.op).to.exist;
+        expect(request.options.testOptions).to.equal('baz');
+        next();
+        done();
+      });
+
+      var snapshot = {type: 'json0', id: 'test1', v: 1, data: {foo: 'bar'}};
+
+      db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, {testOptions: 'baz'}, function(err) {
+        if (err) return done(err);
+      });
+    });
+
+    it('should augment the written document when commit is called', function(done) {
+      // Change the written value of foo to be `fuzz`
+      db.use(BEFORE_CREATE, function(request, next) {
+        request.documentToWrite.foo = 'fuzz';
+        next();
+      });
+
+      var snapshot = {type: 'json0', id: 'test1', v: 1, data: {foo: 'bar'}};
+
+      db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, null, function(err) {
+        if (err) return done(err);
+        expectDocumentToContainFoo('fuzz', done);
       });
     });
   });

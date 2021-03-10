@@ -1,4 +1,6 @@
 module.exports = {
+  // Triggers before the call to write a new document is made
+  beforeCreate: 'beforeCreate',
   // Triggers before the call to replace a document is made
   beforeOverwrite: 'beforeOverwrite',
   // Triggers directly before the call to issue a query for snapshots
