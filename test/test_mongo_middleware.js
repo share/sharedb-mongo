@@ -196,6 +196,20 @@ describe('mongo db middleware', function() {
         expectDocumentToContainFoo('fuzz', done);
       });
     });
+
+    it('returns without writing when there was a middleware error', function(done) {
+      db.use(BEFORE_CREATE, function(_, next) {
+        next(new Error('Oh no!'));
+      });
+
+      var snapshot = {type: 'json0', id: 'test1', v: 1, data: {foo: 'bar'}};
+
+      db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, null, function(err) {
+        expectDocumentNotToExist(function() {
+          if (err) return done();
+        });
+      });
+    });
   });
 
   describe(BEFORE_SNAPSHOT_LOOKUP, function() {
@@ -324,6 +338,16 @@ describe('mongo db middleware', function() {
       expect(results[0].data).eql({
         foo: valueOfFoo
       });
+      cb();
+    });
+  };
+
+  function expectDocumentNotToExist(cb) {
+    var query = {_id: 'test1'};
+
+    db.query('testcollection', query, null, null, function(err, results) {
+      if (err) return done(err);
+      expect(results).to.be.empty;
       cb();
     });
   };
