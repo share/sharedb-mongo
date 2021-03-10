@@ -270,16 +270,21 @@ ShareDbMongo.prototype._writeSnapshot = function(request, id, snapshot, opId, ca
     if (err) return callback(err);
     request.documentToWrite = castToDoc(id, snapshot, opId);
     if (request.documentToWrite._v === 1) {
-      collection.insertOne(request.documentToWrite, function(err) {
-        if (err) {
-          // Return non-success instead of duplicate key error, since this is
-          // expected to occur during simultaneous creates on the same id
-          if (err.code === 11000 && /\b_id_\b/.test(err.message)) {
-            return callback(null, false);
-          }
-          return callback(err);
+      self._middleware.trigger(MiddlewareHandler.Actions.beforeCreate, request, function(middlewareErr) {
+        if (middlewareErr) {
+          return callback(middlewareErr);
         }
-        callback(null, true);
+        collection.insertOne(request.documentToWrite, function(err) {
+          if (err) {
+            // Return non-success instead of duplicate key error, since this is
+            // expected to occur during simultaneous creates on the same id
+            if (err.code === 11000 && /\b_id_\b/.test(err.message)) {
+              return callback(null, false);
+            }
+            return callback(err);
+          }
+          callback(null, true);
+        });
       });
     } else {
       request.query = {_id: id, _v: request.documentToWrite._v - 1};
