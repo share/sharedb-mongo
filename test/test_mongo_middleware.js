@@ -207,6 +207,7 @@ describe('mongo db middleware', function() {
       db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, null, function(err) {
         expectDocumentNotToExist(function() {
           if (err) return done();
+          done('Expected an error, did not get one');
         });
       });
     });
@@ -346,7 +347,7 @@ describe('mongo db middleware', function() {
     var query = {_id: 'test1'};
 
     db.query('testcollection', query, null, null, function(err, results) {
-      if (err) return done(err);
+      if (err) return cb(err);
       expect(results).to.be.empty;
       cb();
     });
