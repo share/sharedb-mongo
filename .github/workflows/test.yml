@@ -15,11 +15,10 @@ jobs:
     strategy:
       matrix:
         node:
-        - 10
         - 12
         - 14
+        - 16
         mongodb:
-        - 3.6
         - 4.0
         - 4.2
         - 4.4
