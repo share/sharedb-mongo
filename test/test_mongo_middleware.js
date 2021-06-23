@@ -260,7 +260,7 @@ describe('mongo db middleware', function() {
       var snapshot = {type: 'json0', id: 'test2', v: 1, data: {foo: 'bar'}};
       db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, null, function(err) {
         if (err) return done(err);
-        db.getOps('testcollection', 'test2', 0, 1, {testOptions: 'yes'}, function(err, ops) {
+        db.getOps('testcollection', 'test2', 0, 1, {testOptions: 'yes'}, function(err) {
           if (err) return done(err);
           /*
             Don't finalize the test in the middleware - since getOps will make queries *after* the middleware is fired.
@@ -284,7 +284,7 @@ describe('mongo db middleware', function() {
         expect(request.action).to.equal(BEFORE_SNAPSHOT_LOOKUP);
         expect(request.collectionName).to.equal('testcollection');
         expect(request.options.testOptions).to.equal('yes');
-        expect(request.query._id).to.deep.equal({ '$in': [ 'test2' ] });
+        expect(request.query._id).to.deep.equal({$in: ['test2']});
         next();
       });
       db.use(BEFORE_SNAPSHOT_LOOKUP, middlewareSpy);
@@ -296,7 +296,7 @@ describe('mongo db middleware', function() {
           test2: 0
         }, {
           test2: 1
-        }, {testOptions: 'yes'}, function(err, ops) {
+        }, {testOptions: 'yes'}, function(err) {
           if (err) return done(err);
           /*
             Don't finalize the test in the middleware - since getOps will make queries *after* the middleware is fired.
