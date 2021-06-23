@@ -1,4 +1,5 @@
 var async = require('async');
+var sinon = require('sinon');
 var expect = require('chai').expect;
 var ShareDbMongo = require('..');
 
@@ -236,6 +237,74 @@ describe('mongo db middleware', function() {
         db.getSnapshot('testcollection', 'test1', null, {testOptions: 'yes'}, function(err, doc) {
           if (err) return done(err);
           expect(doc).to.exist;
+        });
+      });
+    });
+
+    it('has the expected properties on the request object before getting ops', function(done) {
+      var middlewareSpy = sinon.spy(function(request, next) {
+        expect(request).to.have.all.keys([
+          'action',
+          'collectionName',
+          'options',
+          'query'
+        ]);
+        expect(request.action).to.equal(BEFORE_SNAPSHOT_LOOKUP);
+        expect(request.collectionName).to.equal('testcollection');
+        expect(request.options.testOptions).to.equal('yes');
+        expect(request.query._id).to.deep.equal('test2');
+        next();
+      });
+      db.use(BEFORE_SNAPSHOT_LOOKUP, middlewareSpy);
+
+      var snapshot = {type: 'json0', id: 'test2', v: 1, data: {foo: 'bar'}};
+      db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, null, function(err) {
+        if (err) return done(err);
+        db.getOps('testcollection', 'test2', 0, 1, {testOptions: 'yes'}, function(err, ops) {
+          if (err) return done(err);
+          /*
+            Don't finalize the test in the middleware - since getOps will make queries *after* the middleware is fired.
+            If we call done() in the middleware, we'll close the db connection, and then getOps will call _getOps()
+            which will throw a "db connection closed" error.
+           */
+          expect(middlewareSpy.calledOnceWith(sinon.match.object, sinon.match.func)).to.equal(true);
+          done();
+        });
+      });
+    });
+
+    it('has the expected properties on the request object before getting ops bulk', function(done) {
+      var middlewareSpy = sinon.spy(function(request, next) {
+        expect(request).to.have.all.keys([
+          'action',
+          'collectionName',
+          'options',
+          'query'
+        ]);
+        expect(request.action).to.equal(BEFORE_SNAPSHOT_LOOKUP);
+        expect(request.collectionName).to.equal('testcollection');
+        expect(request.options.testOptions).to.equal('yes');
+        expect(request.query._id).to.deep.equal({ '$in': [ 'test2' ] });
+        next();
+      });
+      db.use(BEFORE_SNAPSHOT_LOOKUP, middlewareSpy);
+
+      var snapshot = {type: 'json0', id: 'test2', v: 1, data: {foo: 'bar'}};
+      db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, null, function(err) {
+        if (err) return done(err);
+        db.getOpsBulk('testcollection', {
+          test2: 0
+        }, {
+          test2: 1
+        }, {testOptions: 'yes'}, function(err, ops) {
+          if (err) return done(err);
+          /*
+            Don't finalize the test in the middleware - since getOps will make queries *after* the middleware is fired.
+            If we call done() in the middleware, we'll close the db connection, and then getOps will call _getOps()
+            which will throw a "db connection closed" error.
+           */
+          expect(middlewareSpy.calledOnceWith(sinon.match.object, sinon.match.func)).to.equal(true);
+          done();
         });
       });
     });
