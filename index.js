@@ -1,5 +1,5 @@
 var async = require('async');
-var mongodb = require('mongodb');
+var mongodb = require('./mongodb');
 var DB = require('sharedb').DB;
 var OpLinkValidator = require('./op-link-validator');
 var MiddlewareHandler = require('./src/middleware/middlewareHandler');

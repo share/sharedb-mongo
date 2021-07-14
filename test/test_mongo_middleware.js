@@ -173,14 +173,11 @@ describe('mongo db middleware', function() {
         expect(request.op).to.exist;
         expect(request.options.testOptions).to.equal('baz');
         next();
-        done();
       });
 
       var snapshot = {type: 'json0', id: 'test1', v: 1, data: {foo: 'bar'}};
 
-      db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, {testOptions: 'baz'}, function(err) {
-        if (err) return done(err);
-      });
+      db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, {testOptions: 'baz'}, done);
     });
 
     it('should augment the written document when commit is called', function(done) {
