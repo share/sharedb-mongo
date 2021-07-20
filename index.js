@@ -149,12 +149,8 @@ ShareDbMongo.prototype._connect = function(mongo, options) {
   var mongoPoll = options.mongoPoll;
   if (mongoPoll) {
     var tasks = {
-      mongoClient: (typeof mongo === 'function') ? mongo : function(parallelCb) {
-        mongodb.connect(mongo, options.mongoOptions, parallelCb);
-      },
-      mongoPollClient: (typeof mongoPoll === 'function') ? mongoPoll : function(parallelCb) {
-        mongodb.connect(mongoPoll, options.mongoPollOptions, parallelCb);
-      }
+      mongoClient: connect(mongo, options.mongoOptions),
+      mongoPollClient: connect(mongoPoll, options.mongoPollOptions)
     };
     async.parallel(tasks, function(err, results) {
       if (err) throw err;
@@ -190,8 +186,32 @@ ShareDbMongo.prototype._connect = function(mongo, options) {
   // TODO: Don't pass options directly to mongodb.connect();
   // only pass options.mongoOptions
   var mongoOptions = options.mongoOptions || options;
-  mongodb.connect(mongo, mongoOptions, finish);
+  connect(mongo, mongoOptions)(finish);
 };
+
+function connect(mongo, options) {
+  if (typeof mongo === 'function') return mongo;
+  return function(callback) {
+    options = Object.assign({}, options);
+    delete options.mongo;
+    delete options.mongoPoll;
+    delete options.mongoPollOptions;
+    delete options.pollDelay;
+    delete options.disableIndexCreation;
+    delete options.allowAllQueries;
+    delete options.allowJSQueries;
+    delete options.allowAllQueries;
+    delete options.allowAggregateQueries;
+    delete options.getOpsWithoutStrictLinking;
+
+    if (typeof mongodb.connect === 'function') {
+      mongodb.connect(mongo, options, callback);
+    } else {
+      var client = new mongodb.MongoClient(mongo, options);
+      client.connect(callback);
+    }
+  };
+}
 
 ShareDbMongo.prototype.close = function(callback) {
   if (!callback) {
@@ -1449,24 +1469,8 @@ var collectionOperationsMap = {
     collection.distinct(value.field, query, cb);
   },
   $aggregate: function(collection, query, value, cb) {
-    collection.aggregate(value, function(err, resultsOrCursor) {
-      if (err) {
-        return cb(err);
-      }
-      if (Array.isArray(resultsOrCursor)) {
-        // 2.x Mongo driver directly produces a results array:
-        // https://mongodb.github.io/node-mongodb-native/2.2/api/Collection.html#aggregate
-        var resultsArray = resultsOrCursor;
-        cb(null, resultsArray);
-      } else {
-        // 3.x Mongo driver produces an AggregationCursor:
-        // https://mongodb.github.io/node-mongodb-native/3.0/api/Collection.html#aggregate
-        //
-        // ShareDB expects serializable result data, so use `Cursor#toArray` for that.
-        var cursor = resultsOrCursor;
-        cursor.toArray(cb);
-      }
-    });
+    var cursor = collection.aggregate(value);
+    cursor.toArray(cb);
   },
   $mapReduce: function(collection, query, value, cb) {
     if (typeof value !== 'object') {
