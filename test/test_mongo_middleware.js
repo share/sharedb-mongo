@@ -271,7 +271,9 @@ describe('mongo db middleware', function() {
           if (err) return done(err);
           expect(doc).to.exist;
           expect(middlewareSpy.calledOnceWith(sinon.match.object, sinon.match.func)).to.equal(true);
-          expect(Collection.prototype.find.calledOnceWith(sinon.match.object, {
+          expect(Collection.prototype.find.calledOnceWith({
+            _id: snapshot.id
+          }, {
             forSubmit: true
           })).to.equal(true);
           Collection.prototype.find.restore(); // remove spy
