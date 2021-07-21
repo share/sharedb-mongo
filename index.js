@@ -1,5 +1,5 @@
 var async = require('async');
-var mongodb = require('mongodb');
+var mongodb = require('./mongodb');
 var DB = require('sharedb').DB;
 var OpLinkValidator = require('./op-link-validator');
 var MiddlewareHandler = require('./src/middleware/middlewareHandler');
@@ -149,12 +149,8 @@ ShareDbMongo.prototype._connect = function(mongo, options) {
   var mongoPoll = options.mongoPoll;
   if (mongoPoll) {
     var tasks = {
-      mongoClient: (typeof mongo === 'function') ? mongo : function(parallelCb) {
-        mongodb.connect(mongo, options.mongoOptions, parallelCb);
-      },
-      mongoPollClient: (typeof mongoPoll === 'function') ? mongoPoll : function(parallelCb) {
-        mongodb.connect(mongoPoll, options.mongoPollOptions, parallelCb);
-      }
+      mongoClient: connect(mongo, options.mongoOptions),
+      mongoPollClient: connect(mongoPoll, options.mongoPollOptions)
     };
     async.parallel(tasks, function(err, results) {
       if (err) throw err;
@@ -190,8 +186,32 @@ ShareDbMongo.prototype._connect = function(mongo, options) {
   // TODO: Don't pass options directly to mongodb.connect();
   // only pass options.mongoOptions
   var mongoOptions = options.mongoOptions || options;
-  mongodb.connect(mongo, mongoOptions, finish);
+  connect(mongo, mongoOptions)(finish);
 };
+
+function connect(mongo, options) {
+  if (typeof mongo === 'function') return mongo;
+  return function(callback) {
+    options = Object.assign({}, options);
+    delete options.mongo;
+    delete options.mongoPoll;
+    delete options.mongoPollOptions;
+    delete options.pollDelay;
+    delete options.disableIndexCreation;
+    delete options.allowAllQueries;
+    delete options.allowJSQueries;
+    delete options.allowAllQueries;
+    delete options.allowAggregateQueries;
+    delete options.getOpsWithoutStrictLinking;
+
+    if (typeof mongodb.connect === 'function') {
+      mongodb.connect(mongo, options, callback);
+    } else {
+      var client = new mongodb.MongoClient(mongo, options);
+      client.connect(callback);
+    }
+  };
+}
 
 ShareDbMongo.prototype.close = function(callback) {
   if (!callback) {
@@ -431,7 +451,7 @@ ShareDbMongo.prototype.getOpsToSnapshot = function(collectionName, id, from, sna
 
 ShareDbMongo.prototype.getOps = function(collectionName, id, from, to, options, callback) {
   var self = this;
-  this._getOpLink(collectionName, id, to, function(err, opLink) {
+  this._getOpLink(collectionName, id, to, options, function(err, opLink) {
     if (err) return callback(err);
     // We need to fetch slightly more ops than requested in order to work backwards along
     // linked ops to provide only valid ops
@@ -457,7 +477,7 @@ ShareDbMongo.prototype.getOps = function(collectionName, id, from, to, options, 
 ShareDbMongo.prototype.getOpsBulk = function(collectionName, fromMap, toMap, options, callback) {
   var self = this;
   var ids = Object.keys(fromMap);
-  this._getSnapshotOpLinkBulk(collectionName, ids, function(err, docs) {
+  this._getSnapshotOpLinkBulk(collectionName, ids, options, function(err, docs) {
     if (err) return callback(err);
     var docMap = getDocMap(docs);
     // Add empty array for snapshot versions that are up to date and create
@@ -693,8 +713,8 @@ function readOpsBulk(stream, callback) {
   });
 }
 
-ShareDbMongo.prototype._getOpLink = function(collectionName, id, to, callback) {
-  if (!this.getOpsWithoutStrictLinking) return this._getSnapshotOpLink(collectionName, id, callback);
+ShareDbMongo.prototype._getOpLink = function(collectionName, id, to, options, callback) {
+  if (!this.getOpsWithoutStrictLinking) return this._getSnapshotOpLink(collectionName, id, options, callback);
 
   var db = this;
   this.getOpCollection(collectionName, function(error, collection) {
@@ -703,7 +723,7 @@ ShareDbMongo.prototype._getOpLink = function(collectionName, id, to, callback) {
     // If to is null, we want the most recent version, so just return the
     // snapshot link, which is more efficient than cursoring
     if (to == null) {
-      return db._getSnapshotOpLink(collectionName, id, callback);
+      return db._getSnapshotOpLink(collectionName, id, options, callback);
     }
 
     var query = {
@@ -725,7 +745,7 @@ ShareDbMongo.prototype._getOpLink = function(collectionName, id, to, callback) {
 
       // If we couldn't find an op to link back from, then fall back to using the current
       // snapshot, which is guaranteed to have a link to a valid op.
-      db._getSnapshotOpLink(collectionName, id, callback);
+      db._getSnapshotOpLink(collectionName, id, options, callback);
     });
   });
 };
@@ -764,21 +784,35 @@ function closeCursor(cursor, callback, error, returnValue) {
   });
 }
 
-ShareDbMongo.prototype._getSnapshotOpLink = function(collectionName, id, callback) {
+ShareDbMongo.prototype._getSnapshotOpLink = function(collectionName, id, options, callback) {
+  var self = this;
   this.getCollection(collectionName, function(err, collection) {
     if (err) return callback(err);
     var query = {_id: id};
     var projection = {_id: 0, _o: 1, _v: 1};
-    collection.find(query).limit(1).project(projection).next(callback);
+
+    var request = createRequestForMiddleware(options, collectionName);
+    request.query = query;
+    self._middleware.trigger(MiddlewareHandler.Actions.beforeSnapshotLookup, request, function(middlewareErr) {
+      if (middlewareErr) return callback(middlewareErr);
+      collection.find(query).limit(1).project(projection).next(callback);
+    });
   });
 };
 
-ShareDbMongo.prototype._getSnapshotOpLinkBulk = function(collectionName, ids, callback) {
+ShareDbMongo.prototype._getSnapshotOpLinkBulk = function(collectionName, ids, options, callback) {
+  var self = this;
   this.getCollection(collectionName, function(err, collection) {
     if (err) return callback(err);
     var query = {_id: {$in: ids}};
     var projection = {_o: 1, _v: 1};
-    collection.find(query).project(projection).toArray(callback);
+
+    var request = createRequestForMiddleware(options, collectionName);
+    request.query = query;
+    self._middleware.trigger(MiddlewareHandler.Actions.beforeSnapshotLookup, request, function(middlewareErr) {
+      if (middlewareErr) return callback(middlewareErr);
+      collection.find(query).project(projection).toArray(callback);
+    });
   });
 };
 
@@ -1442,24 +1476,8 @@ var collectionOperationsMap = {
     collection.distinct(value.field, query, cb);
   },
   $aggregate: function(collection, query, value, cb) {
-    collection.aggregate(value, function(err, resultsOrCursor) {
-      if (err) {
-        return cb(err);
-      }
-      if (Array.isArray(resultsOrCursor)) {
-        // 2.x Mongo driver directly produces a results array:
-        // https://mongodb.github.io/node-mongodb-native/2.2/api/Collection.html#aggregate
-        var resultsArray = resultsOrCursor;
-        cb(null, resultsArray);
-      } else {
-        // 3.x Mongo driver produces an AggregationCursor:
-        // https://mongodb.github.io/node-mongodb-native/3.0/api/Collection.html#aggregate
-        //
-        // ShareDB expects serializable result data, so use `Cursor#toArray` for that.
-        var cursor = resultsOrCursor;
-        cursor.toArray(cb);
-      }
-    });
+    var cursor = collection.aggregate(value);
+    cursor.toArray(cb);
   },
   $mapReduce: function(collection, query, value, cb) {
     if (typeof value !== 'object') {

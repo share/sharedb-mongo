@@ -1,6 +1,9 @@
 var async = require('async');
+var sinon = require('sinon');
 var expect = require('chai').expect;
 var ShareDbMongo = require('..');
+var mongodb = require('./../mongodb');
+var Collection = mongodb.Collection;
 
 var mongoUrl = process.env.TEST_MONGO_URL || 'mongodb://localhost:27017/test';
 var BEFORE_EDIT = ShareDbMongo.MiddlewareActions.beforeOverwrite;
@@ -16,7 +19,7 @@ function create(callback) {
       callback(null, db, mongo);
     });
   });
-};
+}
 
 describe('mongo db middleware', function() {
   var db;
@@ -172,14 +175,11 @@ describe('mongo db middleware', function() {
         expect(request.op).to.exist;
         expect(request.options.testOptions).to.equal('baz');
         next();
-        done();
       });
 
       var snapshot = {type: 'json0', id: 'test1', v: 1, data: {foo: 'bar'}};
 
-      db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, {testOptions: 'baz'}, function(err) {
-        if (err) return done(err);
-      });
+      db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, {testOptions: 'baz'}, done);
     });
 
     it('should augment the written document when commit is called', function(done) {
@@ -241,8 +241,8 @@ describe('mongo db middleware', function() {
     });
 
     it('passes forSubmit = true in options when fields has $submit = true', function(done) {
-      let snapshotRequestObject = null;
-      db.use(BEFORE_SNAPSHOT_LOOKUP, function(request, next) {
+      sinon.spy(Collection.prototype, 'find');
+      var middlewareSpy = sinon.spy(function(request, next) {
         expect(request).to.have.all.keys([
           'action',
           'collectionName',
@@ -254,10 +254,13 @@ describe('mongo db middleware', function() {
         expect(request.options.testOptions).to.equal('yes');
         expect(request.options.forSubmit).to.equal(true);
         expect(request.query._id).to.equal('test1');
-        snapshotRequestObject = request;
+        // test that when we set queryOptions in the middleware, they get passed to the Mongo driver.
+        request.queryOptions = {
+          forSubmit: true
+        };
         next();
-        done();
       });
+      db.use(BEFORE_SNAPSHOT_LOOKUP, middlewareSpy);
 
       var snapshot = {type: 'json0', id: 'test1', v: 1, data: {foo: 'bar'}};
       db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, null, function(err) {
@@ -267,6 +270,80 @@ describe('mongo db middleware', function() {
         }, {testOptions: 'yes'}, function(err, doc) {
           if (err) return done(err);
           expect(doc).to.exist;
+          expect(middlewareSpy.calledOnceWith(sinon.match.object, sinon.match.func)).to.equal(true);
+          expect(Collection.prototype.find.calledOnceWith(sinon.match.object, {
+            forSubmit: true
+          })).to.equal(true);
+          Collection.prototype.find.restore(); // remove spy
+          done();
+        });
+      });
+    });
+
+    it('has the expected properties on the request object before getting ops', function(done) {
+      var middlewareSpy = sinon.spy(function(request, next) {
+        expect(request).to.have.all.keys([
+          'action',
+          'collectionName',
+          'options',
+          'query'
+        ]);
+        expect(request.action).to.equal(BEFORE_SNAPSHOT_LOOKUP);
+        expect(request.collectionName).to.equal('testcollection');
+        expect(request.options.testOptions).to.equal('yes');
+        expect(request.query._id).to.deep.equal('test2');
+        next();
+      });
+      db.use(BEFORE_SNAPSHOT_LOOKUP, middlewareSpy);
+
+      var snapshot = {type: 'json0', id: 'test2', v: 1, data: {foo: 'bar'}};
+      db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, null, function(err) {
+        if (err) return done(err);
+        db.getOps('testcollection', 'test2', 0, 1, {testOptions: 'yes'}, function(err) {
+          if (err) return done(err);
+          /*
+            Don't finalize the test in the middleware - since getOps will make queries *after* the middleware is fired.
+            If we call done() in the middleware, we'll close the db connection, and then getOps will call _getOps()
+            which will throw a "db connection closed" error.
+           */
+          expect(middlewareSpy.calledOnceWith(sinon.match.object, sinon.match.func)).to.equal(true);
+          done();
+        });
+      });
+    });
+
+    it('has the expected properties on the request object before getting ops bulk', function(done) {
+      var middlewareSpy = sinon.spy(function(request, next) {
+        expect(request).to.have.all.keys([
+          'action',
+          'collectionName',
+          'options',
+          'query'
+        ]);
+        expect(request.action).to.equal(BEFORE_SNAPSHOT_LOOKUP);
+        expect(request.collectionName).to.equal('testcollection');
+        expect(request.options.testOptions).to.equal('yes');
+        expect(request.query._id).to.deep.equal({$in: ['test2']});
+        next();
+      });
+      db.use(BEFORE_SNAPSHOT_LOOKUP, middlewareSpy);
+
+      var snapshot = {type: 'json0', id: 'test2', v: 1, data: {foo: 'bar'}};
+      db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, null, function(err) {
+        if (err) return done(err);
+        db.getOpsBulk('testcollection', {
+          test2: 0
+        }, {
+          test2: 1
+        }, {testOptions: 'yes'}, function(err) {
+          if (err) return done(err);
+          /*
+            Don't finalize the test in the middleware - since getOps will make queries *after* the middleware is fired.
+            If we call done() in the middleware, we'll close the db connection, and then getOps will call _getOps()
+            which will throw a "db connection closed" error.
+           */
+          expect(middlewareSpy.calledOnceWith(sinon.match.object, sinon.match.func)).to.equal(true);
+          done();
         });
       });
     });
