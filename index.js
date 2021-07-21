@@ -791,7 +791,7 @@ ShareDbMongo.prototype._getSnapshotOpLink = function(collectionName, id, options
     var query = {_id: id};
     var projection = {_id: 0, _o: 1, _v: 1};
 
-    var request = createRequestForMiddleware(options, collectionName);
+    var request = createRequestForMiddleware(null, options, collectionName);
     request.query = query;
     self._middleware.trigger(MiddlewareHandler.Actions.beforeSnapshotLookup, request, function(middlewareErr) {
       if (middlewareErr) return callback(middlewareErr);
@@ -807,7 +807,7 @@ ShareDbMongo.prototype._getSnapshotOpLinkBulk = function(collectionName, ids, op
     var query = {_id: {$in: ids}};
     var projection = {_o: 1, _v: 1};
 
-    var request = createRequestForMiddleware(options, collectionName);
+    var request = createRequestForMiddleware(null, options, collectionName);
     request.query = query;
     self._middleware.trigger(MiddlewareHandler.Actions.beforeSnapshotLookup, request, function(middlewareErr) {
       if (middlewareErr) return callback(middlewareErr);
