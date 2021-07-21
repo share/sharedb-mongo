@@ -218,14 +218,14 @@ ShareDbMongo.prototype.close = function(callback) {
 
 ShareDbMongo.prototype.commit = function(collectionName, id, op, snapshot, options, callback) {
   var self = this;
-  var request = createRequestForMiddleware(options, collectionName, op);
+  var request = createRequestForMiddleware(null, options, collectionName, op);
   this._writeOp(collectionName, id, op, snapshot, function(err, result) {
     if (err) return callback(err);
     var opId = result.insertedId;
     self._writeSnapshot(request, id, snapshot, opId, function(err, succeeded) {
       if (succeeded) return callback(err, succeeded);
       // Cleanup unsuccessful op if snapshot write failed. This is not
-      // neccessary for data correctness, but it gets rid of clutter
+      // necessary for data correctness, but it gets rid of clutter
       self._deleteOp(request.collectionName, opId, function(removeErr) {
         callback(err || removeErr, succeeded);
       });
@@ -233,7 +233,14 @@ ShareDbMongo.prototype.commit = function(collectionName, id, op, snapshot, optio
   });
 };
 
-function createRequestForMiddleware(options, collectionName, op) {
+function createRequestForMiddleware(fields, options, collectionName, op) {
+  // When we're creating a request for submitting an op, let downstream middleware know.
+  if (fields && fields.$submit === true) {
+    if (!options) {
+      options = {};
+    }
+    options.forSubmit = true;
+  }
   // Create a new request object which will be passed to helper functions and middleware
   var request = {
     options: options,
@@ -311,12 +318,12 @@ ShareDbMongo.prototype.getSnapshot = function(collectionName, id, fields, option
     if (err) return callback(err);
     var query = {_id: id};
     var projection = getProjection(fields, options);
-    var request = createRequestForMiddleware(options, collectionName);
+    var request = createRequestForMiddleware(fields, options, collectionName);
     request.query = query;
     self._middleware.trigger(MiddlewareHandler.Actions.beforeSnapshotLookup, request, function(middlewareErr) {
       if (middlewareErr) return callback(middlewareErr);
 
-      collection.find(request.query).limit(1).project(projection).next(function(err, doc) {
+      collection.find(request.query, request.queryOptions).limit(1).project(projection).next(function(err, doc) {
         if (err) return callback(err);
         var snapshot = (doc) ? castToSnapshot(doc) : new MongoSnapshot(id, 0, null, undefined);
         callback(null, snapshot);
@@ -331,12 +338,12 @@ ShareDbMongo.prototype.getSnapshotBulk = function(collectionName, ids, fields, o
     if (err) return callback(err);
     var query = {_id: {$in: ids}};
     var projection = getProjection(fields, options);
-    var request = createRequestForMiddleware(options, collectionName);
+    var request = createRequestForMiddleware(fields, options, collectionName);
     request.query = query;
     self._middleware.trigger(MiddlewareHandler.Actions.beforeSnapshotLookup, request, function(middlewareErr) {
       if (middlewareErr) return callback(middlewareErr);
 
-      collection.find(request.query).project(projection).toArray(function(err, docs) {
+      collection.find(request.query, request.queryOptions).project(projection).toArray(function(err, docs) {
         if (err) return callback(err);
         var snapshotMap = {};
         for (var i = 0; i < docs.length; i++) {

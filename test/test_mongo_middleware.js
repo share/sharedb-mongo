@@ -240,6 +240,37 @@ describe('mongo db middleware', function() {
       });
     });
 
+    it('passes forSubmit = true in options when fields has $submit = true', function(done) {
+      let snapshotRequestObject = null;
+      db.use(BEFORE_SNAPSHOT_LOOKUP, function(request, next) {
+        expect(request).to.have.all.keys([
+          'action',
+          'collectionName',
+          'options',
+          'query'
+        ]);
+        expect(request.action).to.equal(BEFORE_SNAPSHOT_LOOKUP);
+        expect(request.collectionName).to.equal('testcollection');
+        expect(request.options.testOptions).to.equal('yes');
+        expect(request.options.forSubmit).to.equal(true);
+        expect(request.query._id).to.equal('test1');
+        snapshotRequestObject = request;
+        next();
+        done();
+      });
+
+      var snapshot = {type: 'json0', id: 'test1', v: 1, data: {foo: 'bar'}};
+      db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, null, function(err) {
+        if (err) return done(err);
+        db.getSnapshot('testcollection', 'test1', {
+          $submit: true
+        }, {testOptions: 'yes'}, function(err, doc) {
+          if (err) return done(err);
+          expect(doc).to.exist;
+        });
+      });
+    });
+
     it('has the expected properties on the request object before getting bulk snapshots', function(done) {
       db.use(BEFORE_SNAPSHOT_LOOKUP, function(request, next) {
         expect(request).to.have.all.keys([
