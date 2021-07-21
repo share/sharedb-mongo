@@ -259,7 +259,7 @@ function createRequestForMiddleware(fields, options, collectionName, op) {
     if (!options) {
       options = {};
     }
-    options.forSubmit = true;
+    options.isForSubmit = true;
   }
   // Create a new request object which will be passed to helper functions and middleware
   var request = {

@@ -240,7 +240,7 @@ describe('mongo db middleware', function() {
       });
     });
 
-    it('passes forSubmit = true in options when fields has $submit = true', function(done) {
+    it('passes isForSubmit = true in options when fields has $submit = true', function(done) {
       sinon.spy(Collection.prototype, 'find');
       var middlewareSpy = sinon.spy(function(request, next) {
         expect(request).to.have.all.keys([
@@ -252,11 +252,11 @@ describe('mongo db middleware', function() {
         expect(request.action).to.equal(BEFORE_SNAPSHOT_LOOKUP);
         expect(request.collectionName).to.equal('testcollection');
         expect(request.options.testOptions).to.equal('yes');
-        expect(request.options.forSubmit).to.equal(true);
+        expect(request.options.isForSubmit).to.equal(true);
         expect(request.query._id).to.equal('test1');
         // test that when we set queryOptions in the middleware, they get passed to the Mongo driver.
         request.queryOptions = {
-          forSubmit: true
+          isForSubmit: true
         };
         next();
       });
@@ -274,7 +274,7 @@ describe('mongo db middleware', function() {
           expect(Collection.prototype.find.calledOnceWith({
             _id: snapshot.id
           }, {
-            forSubmit: true
+            isForSubmit: true
           })).to.equal(true);
           Collection.prototype.find.restore(); // remove spy
           done();
