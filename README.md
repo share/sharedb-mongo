@@ -219,6 +219,7 @@ Register a new middleware.
       - `query` - A filter that will be used to lookup the document that is about to be edited, which should always include an ID and snapshot version e.g. `{_id: 'uuid', _v: 1}`
     - `'beforeSnapshotLookup'` actions have additional context properties:
       - `query` - A filter that will be used to lookup the snapshot. When a single snapshot is looked up the query will take the shape `{_id: docId}` while a bulk lookup by a list of IDs will resemble `{_id: {$in: docIdsArray}}`.
+      - `findOptions` - Middleware can define and populate this object on the context to pass options to the MongoDB driver when doing the lookup.
 
 ### Limitations
 
