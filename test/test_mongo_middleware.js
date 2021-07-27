@@ -254,9 +254,9 @@ describe('mongo db middleware', function() {
         expect(request.options.testOptions).to.equal('yes');
         expect(request.options.isForSubmit).to.equal(true);
         expect(request.query._id).to.equal('test1');
-        // test that when we set queryOptions in the middleware, they get passed to the Mongo driver.
-        request.queryOptions = {
-          isForSubmit: true
+        // test that when we set findOptions in the middleware, they get passed to the Mongo driver.
+        request.findOptions = {
+          maxTimeMS: 999
         };
         next();
       });
@@ -274,7 +274,7 @@ describe('mongo db middleware', function() {
           expect(Collection.prototype.find.calledOnceWith({
             _id: snapshot.id
           }, {
-            isForSubmit: true
+            maxTimeMS: 999
           })).to.equal(true);
           Collection.prototype.find.restore(); // remove spy
           done();

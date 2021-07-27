@@ -238,7 +238,7 @@ ShareDbMongo.prototype.close = function(callback) {
 
 ShareDbMongo.prototype.commit = function(collectionName, id, op, snapshot, options, callback) {
   var self = this;
-  var request = createRequestForMiddleware(null, options, collectionName, op);
+  var request = createRequestForMiddleware(options, collectionName, op);
   this._writeOp(collectionName, id, op, snapshot, function(err, result) {
     if (err) return callback(err);
     var opId = result.insertedId;
@@ -343,7 +343,7 @@ ShareDbMongo.prototype.getSnapshot = function(collectionName, id, fields, option
     self._middleware.trigger(MiddlewareHandler.Actions.beforeSnapshotLookup, request, function(middlewareErr) {
       if (middlewareErr) return callback(middlewareErr);
 
-      collection.find(request.query, request.queryOptions).limit(1).project(projection).next(function(err, doc) {
+      collection.find(request.query, request.findOptions).limit(1).project(projection).next(function(err, doc) {
         if (err) return callback(err);
         var snapshot = (doc) ? castToSnapshot(doc) : new MongoSnapshot(id, 0, null, undefined);
         callback(null, snapshot);
@@ -363,7 +363,7 @@ ShareDbMongo.prototype.getSnapshotBulk = function(collectionName, ids, fields, o
     self._middleware.trigger(MiddlewareHandler.Actions.beforeSnapshotLookup, request, function(middlewareErr) {
       if (middlewareErr) return callback(middlewareErr);
 
-      collection.find(request.query, request.queryOptions).project(projection).toArray(function(err, docs) {
+      collection.find(request.query, request.findOptions).project(projection).toArray(function(err, docs) {
         if (err) return callback(err);
         var snapshotMap = {};
         for (var i = 0; i < docs.length; i++) {
