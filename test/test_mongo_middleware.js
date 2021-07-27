@@ -311,7 +311,7 @@ describe('mongo db middleware', function() {
             If we call done() in the middleware, we'll close the db connection, and then getOps will call _getOps()
             which will throw a "db connection closed" error.
            */
-          expect(middlewareSpy.calledOnceWith(sinon.match.object, sinon.match.func)).to.equal(true);
+          expect(middlewareSpy).to.have.been.calledOnceWith(sinon.match.object, sinon.match.func);
           done();
         });
       });
@@ -347,7 +347,7 @@ describe('mongo db middleware', function() {
             If we call done() in the middleware, we'll close the db connection, and then getOps will call _getOps()
             which will throw a "db connection closed" error.
            */
-          expect(middlewareSpy.calledOnceWith(sinon.match.object, sinon.match.func)).to.equal(true);
+          expect(middlewareSpy).to.have.been.calledOnceWith(sinon.match.object, sinon.match.func);
           done();
         });
       });
