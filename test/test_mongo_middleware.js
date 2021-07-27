@@ -22,9 +22,11 @@ function create(callback) {
 }
 
 describe('mongo db middleware', function() {
+  var sandbox = sinon.createSandbox();
   var db;
 
   beforeEach(function(done) {
+    sandbox.spy(Collection.prototype, 'find');
     create(function(err, createdDb) {
       if (err) return done(err);
       db = createdDb;
@@ -33,6 +35,7 @@ describe('mongo db middleware', function() {
   });
 
   afterEach(function(done) {
+    sandbox.restore();
     db.close(done);
   });
 
@@ -241,7 +244,6 @@ describe('mongo db middleware', function() {
     });
 
     it('passes triggeredBy = submitRequest in options when fields has $submit = true', function(done) {
-      sinon.spy(Collection.prototype, 'find');
       var middlewareSpy = sinon.spy(function(request, next) {
         expect(request).to.have.all.keys([
           'action',
@@ -276,7 +278,6 @@ describe('mongo db middleware', function() {
           }, {
             maxTimeMS: 999
           })).to.equal(true);
-          Collection.prototype.find.restore(); // remove spy
           done();
         });
       });
