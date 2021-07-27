@@ -799,7 +799,7 @@ ShareDbMongo.prototype._getSnapshotOpLink = function(collectionName, id, options
     request.query = query;
     self._middleware.trigger(MiddlewareHandler.Actions.beforeSnapshotLookup, request, function(middlewareErr) {
       if (middlewareErr) return callback(middlewareErr);
-      collection.find(query).limit(1).project(projection).next(callback);
+      collection.find(query, request.findOptions).limit(1).project(projection).next(callback);
     });
   });
 };
@@ -815,7 +815,7 @@ ShareDbMongo.prototype._getSnapshotOpLinkBulk = function(collectionName, ids, op
     request.query = query;
     self._middleware.trigger(MiddlewareHandler.Actions.beforeSnapshotLookup, request, function(middlewareErr) {
       if (middlewareErr) return callback(middlewareErr);
-      collection.find(query).project(projection).toArray(callback);
+      collection.find(query, request.findOptions).project(projection).toArray(callback);
     });
   });
 };
