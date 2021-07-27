@@ -20,7 +20,8 @@
     "nyc": "^14.1.1",
     "ot-json1": "^1.0.1",
     "sharedb-mingo-memory": "^1.1.1",
-    "sinon": "^6.1.5"
+    "sinon": "^6.1.5",
+    "sinon-chai": "^3.7.0"
   },
   "scripts": {
     "lint": "./node_modules/.bin/eslint --ignore-path .gitignore '**/*.js'",

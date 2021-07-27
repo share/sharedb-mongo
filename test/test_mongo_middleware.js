@@ -1,6 +1,8 @@
 var async = require('async');
 var sinon = require('sinon');
-var expect = require('chai').expect;
+var chai = require('chai');
+chai.use(require('sinon-chai'));
+var expect = chai.expect;
 var ShareDbMongo = require('..');
 var mongodb = require('./../mongodb');
 var Collection = mongodb.Collection;
@@ -272,12 +274,12 @@ describe('mongo db middleware', function() {
         }, {testOptions: 'yes'}, function(err, doc) {
           if (err) return done(err);
           expect(doc).to.exist;
-          expect(middlewareSpy.calledOnceWith(sinon.match.object, sinon.match.func)).to.equal(true);
-          expect(Collection.prototype.find.calledOnceWith({
+          expect(middlewareSpy).to.have.been.calledOnceWith(sinon.match.object, sinon.match.func);
+          expect(Collection.prototype.find).to.have.been.calledOnceWith({
             _id: snapshot.id
           }, {
             maxTimeMS: 999
-          })).to.equal(true);
+          });
           done();
         });
       });
