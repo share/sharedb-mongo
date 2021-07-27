@@ -263,7 +263,7 @@ function createRequestForMiddleware(options, collectionName, op, fields) {
      * TODO What if sharedb populated this?
      *  It looks like we would have the following values for 'trigger': submitRequest, queryEmit, fetch
      */
-    options.trigger = 'submitRequest';
+    options.triggeredBy = 'submitRequest';
   }
   // Create a new request object which will be passed to helper functions and middleware
   var request = {

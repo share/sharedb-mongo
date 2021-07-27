@@ -240,7 +240,7 @@ describe('mongo db middleware', function() {
       });
     });
 
-    it('passes trigger = submitRequest in options when fields has $submit = true', function(done) {
+    it('passes triggeredBy = submitRequest in options when fields has $submit = true', function(done) {
       sinon.spy(Collection.prototype, 'find');
       var middlewareSpy = sinon.spy(function(request, next) {
         expect(request).to.have.all.keys([
@@ -252,7 +252,7 @@ describe('mongo db middleware', function() {
         expect(request.action).to.equal(BEFORE_SNAPSHOT_LOOKUP);
         expect(request.collectionName).to.equal('testcollection');
         expect(request.options.testOptions).to.equal('yes');
-        expect(request.options.trigger).to.equal('submitRequest');
+        expect(request.options.triggeredBy).to.equal('submitRequest');
         expect(request.query._id).to.equal('test1');
         // test that when we set findOptions in the middleware, they get passed to the Mongo driver.
         request.findOptions = {
