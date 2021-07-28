@@ -254,23 +254,19 @@ ShareDbMongo.prototype.commit = function(collectionName, id, op, snapshot, optio
 };
 
 function createRequestForMiddleware(options, collectionName, op, fields) {
-  // When we're creating a request for submitting an op, let downstream middleware know.
-  if (fields && fields.$submit === true) {
-    if (!options) {
-      options = {};
-    }
-    /**
-     * TODO What if sharedb populated this?
-     *  It looks like we would have the following values for 'trigger': submitRequest, queryEmit, fetch
-     */
-    options.triggeredBy = 'submitRequest';
-  }
   // Create a new request object which will be passed to helper functions and middleware
   var request = {
     options: options,
     collectionName: collectionName
   };
   if (op) request.op = op;
+  // When we're creating a request for submitting an op, let downstream middleware know.
+  if (fields && fields.$submit === true) {
+    /**
+     * TODO What if sharedb populated this? We could use MIDDLEWARE_ACTIONS.
+     */
+    request.triggeredBy = 'submitRequest';
+  }
   return request;
 }
 
