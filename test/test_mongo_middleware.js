@@ -1,7 +1,11 @@
 var async = require('async');
 var sinon = require('sinon');
-var expect = require('chai').expect;
+var chai = require('chai');
+chai.use(require('sinon-chai'));
+var expect = chai.expect;
 var ShareDbMongo = require('..');
+var mongodb = require('./../mongodb');
+var Collection = mongodb.Collection;
 
 var mongoUrl = process.env.TEST_MONGO_URL || 'mongodb://localhost:27017/test';
 var BEFORE_EDIT = ShareDbMongo.MiddlewareActions.beforeOverwrite;
@@ -17,12 +21,14 @@ function create(callback) {
       callback(null, db, mongo);
     });
   });
-};
+}
 
 describe('mongo db middleware', function() {
+  var sandbox = sinon.createSandbox();
   var db;
 
   beforeEach(function(done) {
+    sandbox.spy(Collection.prototype, 'find');
     create(function(err, createdDb) {
       if (err) return done(err);
       db = createdDb;
@@ -31,6 +37,7 @@ describe('mongo db middleware', function() {
   });
 
   afterEach(function(done) {
+    sandbox.restore();
     db.close(done);
   });
 
@@ -238,6 +245,47 @@ describe('mongo db middleware', function() {
       });
     });
 
+    it('passes triggeredBy = submitRequest when fields has $submit = true', function(done) {
+      var middlewareSpy = sinon.spy(function(request, next) {
+        expect(request).to.have.all.keys([
+          'action',
+          'collectionName',
+          'options',
+          'query',
+          'triggeredBy'
+        ]);
+        expect(request.action).to.equal(BEFORE_SNAPSHOT_LOOKUP);
+        expect(request.collectionName).to.equal('testcollection');
+        expect(request.options.testOptions).to.equal('yes');
+        expect(request.triggeredBy).to.equal('submitRequest');
+        expect(request.query._id).to.equal('test1');
+        // test that when we set findOptions in the middleware, they get passed to the Mongo driver.
+        request.findOptions = {
+          maxTimeMS: 999
+        };
+        next();
+      });
+      db.use(BEFORE_SNAPSHOT_LOOKUP, middlewareSpy);
+
+      var snapshot = {type: 'json0', id: 'test1', v: 1, data: {foo: 'bar'}};
+      db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, null, function(err) {
+        if (err) return done(err);
+        db.getSnapshot('testcollection', 'test1', {
+          $submit: true
+        }, {testOptions: 'yes'}, function(err, doc) {
+          if (err) return done(err);
+          expect(doc).to.exist;
+          expect(middlewareSpy).to.have.been.calledOnceWith(sinon.match.object, sinon.match.func);
+          expect(Collection.prototype.find).to.have.been.calledOnceWith({
+            _id: snapshot.id
+          }, {
+            maxTimeMS: 999
+          });
+          done();
+        });
+      });
+    });
+
     it('has the expected properties on the request object before getting ops', function(done) {
       var middlewareSpy = sinon.spy(function(request, next) {
         expect(request).to.have.all.keys([
@@ -264,7 +312,7 @@ describe('mongo db middleware', function() {
             If we call done() in the middleware, we'll close the db connection, and then getOps will call _getOps()
             which will throw a "db connection closed" error.
            */
-          expect(middlewareSpy.calledOnceWith(sinon.match.object, sinon.match.func)).to.equal(true);
+          expect(middlewareSpy).to.have.been.calledOnceWith(sinon.match.object, sinon.match.func);
           done();
         });
       });
@@ -300,7 +348,7 @@ describe('mongo db middleware', function() {
             If we call done() in the middleware, we'll close the db connection, and then getOps will call _getOps()
             which will throw a "db connection closed" error.
            */
-          expect(middlewareSpy.calledOnceWith(sinon.match.object, sinon.match.func)).to.equal(true);
+          expect(middlewareSpy).to.have.been.calledOnceWith(sinon.match.object, sinon.match.func);
           done();
         });
       });

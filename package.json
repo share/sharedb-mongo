@@ -6,7 +6,7 @@
   "dependencies": {
     "async": "^2.6.3",
     "mongodb": "^2.1.2 || ^3.0.0 || ^4.0.0",
-    "sharedb": "^1.0.0-beta"
+    "sharedb": "^1.9.1"
   },
   "devDependencies": {
     "chai": "^4.2.0",
@@ -20,7 +20,8 @@
     "nyc": "^14.1.1",
     "ot-json1": "^1.0.1",
     "sharedb-mingo-memory": "^1.1.1",
-    "sinon": "^6.1.5"
+    "sinon": "^6.1.5",
+    "sinon-chai": "^3.7.0"
   },
   "scripts": {
     "lint": "./node_modules/.bin/eslint --ignore-path .gitignore '**/*.js'",

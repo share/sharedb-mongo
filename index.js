@@ -245,7 +245,7 @@ ShareDbMongo.prototype.commit = function(collectionName, id, op, snapshot, optio
     self._writeSnapshot(request, id, snapshot, opId, function(err, succeeded) {
       if (succeeded) return callback(err, succeeded);
       // Cleanup unsuccessful op if snapshot write failed. This is not
-      // neccessary for data correctness, but it gets rid of clutter
+      // necessary for data correctness, but it gets rid of clutter
       self._deleteOp(request.collectionName, opId, function(removeErr) {
         callback(err || removeErr, succeeded);
       });
@@ -253,13 +253,20 @@ ShareDbMongo.prototype.commit = function(collectionName, id, op, snapshot, optio
   });
 };
 
-function createRequestForMiddleware(options, collectionName, op) {
+function createRequestForMiddleware(options, collectionName, op, fields) {
   // Create a new request object which will be passed to helper functions and middleware
   var request = {
     options: options,
     collectionName: collectionName
   };
   if (op) request.op = op;
+  // When we're creating a request for submitting an op, let downstream middleware know.
+  if (fields && fields.$submit === true) {
+    /**
+     * TODO What if sharedb populated this? We could use MIDDLEWARE_ACTIONS.
+     */
+    request.triggeredBy = 'submitRequest';
+  }
   return request;
 }
 
@@ -331,12 +338,12 @@ ShareDbMongo.prototype.getSnapshot = function(collectionName, id, fields, option
     if (err) return callback(err);
     var query = {_id: id};
     var projection = getProjection(fields, options);
-    var request = createRequestForMiddleware(options, collectionName);
+    var request = createRequestForMiddleware(options, collectionName, null, fields);
     request.query = query;
     self._middleware.trigger(MiddlewareHandler.Actions.beforeSnapshotLookup, request, function(middlewareErr) {
       if (middlewareErr) return callback(middlewareErr);
 
-      collection.find(request.query).limit(1).project(projection).next(function(err, doc) {
+      collection.find(request.query, request.findOptions).limit(1).project(projection).next(function(err, doc) {
         if (err) return callback(err);
         var snapshot = (doc) ? castToSnapshot(doc) : new MongoSnapshot(id, 0, null, undefined);
         callback(null, snapshot);
@@ -351,12 +358,12 @@ ShareDbMongo.prototype.getSnapshotBulk = function(collectionName, ids, fields, o
     if (err) return callback(err);
     var query = {_id: {$in: ids}};
     var projection = getProjection(fields, options);
-    var request = createRequestForMiddleware(options, collectionName);
+    var request = createRequestForMiddleware(options, collectionName, null, fields);
     request.query = query;
     self._middleware.trigger(MiddlewareHandler.Actions.beforeSnapshotLookup, request, function(middlewareErr) {
       if (middlewareErr) return callback(middlewareErr);
 
-      collection.find(request.query).project(projection).toArray(function(err, docs) {
+      collection.find(request.query, request.findOptions).project(projection).toArray(function(err, docs) {
         if (err) return callback(err);
         var snapshotMap = {};
         for (var i = 0; i < docs.length; i++) {
@@ -788,7 +795,7 @@ ShareDbMongo.prototype._getSnapshotOpLink = function(collectionName, id, options
     request.query = query;
     self._middleware.trigger(MiddlewareHandler.Actions.beforeSnapshotLookup, request, function(middlewareErr) {
       if (middlewareErr) return callback(middlewareErr);
-      collection.find(query).limit(1).project(projection).next(callback);
+      collection.find(query, request.findOptions).limit(1).project(projection).next(callback);
     });
   });
 };
@@ -804,7 +811,7 @@ ShareDbMongo.prototype._getSnapshotOpLinkBulk = function(collectionName, ids, op
     request.query = query;
     self._middleware.trigger(MiddlewareHandler.Actions.beforeSnapshotLookup, request, function(middlewareErr) {
       if (middlewareErr) return callback(middlewareErr);
-      collection.find(query).project(projection).toArray(callback);
+      collection.find(query, request.findOptions).project(projection).toArray(callback);
     });
   });
 };
