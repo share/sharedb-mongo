@@ -6,7 +6,7 @@
   "dependencies": {
     "async": "^2.6.3",
     "mongodb": "^2.1.2 || ^3.0.0 || ^4.0.0",
-    "sharedb": "^1.9.1"
+    "sharedb": "^1.9.1 || ^2.0.0"
   },
   "devDependencies": {
     "chai": "^4.2.0",
