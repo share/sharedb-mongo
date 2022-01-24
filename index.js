@@ -443,7 +443,7 @@ ShareDbMongo.prototype.getOpsToSnapshot = function(collectionName, id, from, sna
   this._getOps(collectionName, id, from, to, options, function(err, ops) {
     if (err) return callback(err);
     var filtered = getLinkedOps(ops, null, snapshot._opLink);
-    var err = checkOpsFrom(collectionName, id, filtered, from);
+    var err = (options || {}).ignoreMissingOps ? null : checkOpsFrom(collectionName, id, filtered, from);
     if (err) return callback(err);
     callback(null, filtered);
   });
@@ -464,10 +464,11 @@ ShareDbMongo.prototype.getOps = function(collectionName, id, from, to, options, 
       if (err) return callback(err);
       if (self.getOpsWithoutStrictLinking) fetchOpsTo = opLink._v;
     }
+
     self._getOps(collectionName, id, from, fetchOpsTo, options, function(err, ops) {
       if (err) return callback(err);
       var filtered = filterOps(ops, opLink, to);
-      var err = checkOpsFrom(collectionName, id, filtered, from);
+      var err = (options || {}).ignoreMissingOps ? null : checkOpsFrom(collectionName, id, filtered, from);
       if (err) return callback(err);
       callback(null, filtered);
     });
