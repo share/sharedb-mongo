@@ -98,6 +98,19 @@ describe('getOps', function() {
         done();
       });
     });
+
+    it('getOpsToSnapshot ignoreMissingOps option returns available ops when missing ops', function(done) {
+      db.getSnapshot(collection, id, {$submit: true}, null, function(error, snapshot) {
+        if (error) done(error);
+        db.getOpsToSnapshot(collection, id, 0, snapshot, {ignoreMissingOps: true}, function(error, ops) {
+          if (error) return done(error);
+          expect(ops.length).to.equal(2);
+          expect(ops[0].v).to.equal(2);
+          expect(ops[1].v).to.equal(3);
+          done();
+        });
+      });
+    });
   });
 });
 
