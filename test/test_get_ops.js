@@ -60,14 +60,7 @@ describe('getOps', function() {
 
       commitOpChain(db, mongo, collection, id, ops, function(error) {
         if (error) done(error);
-        callInSeries([
-          function(next) {
-            mongo.collection('o_' + collection).deleteOne({v: 0}, next);
-          },
-          function() {
-            mongo.collection('o_' + collection).deleteOne({v: 1}, done);
-          }
-        ]);
+        mongo.collection('o_' + collection).deleteOne({v: 1}, done);
       });
     });
 
@@ -89,7 +82,7 @@ describe('getOps', function() {
       });
     });
 
-    it('ignoreMissingOps option returns available ops when missing ops', function(done) {
+    it('ignoreMissingOps option returns ops up to the first missing op', function(done) {
       db.getOps(collection, id, 0, 4, {ignoreMissingOps: true}, function(error, ops) {
         if (error) return done(error);
         expect(ops.length).to.equal(2);
