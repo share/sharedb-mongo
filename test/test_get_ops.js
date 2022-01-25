@@ -92,7 +92,7 @@ describe('getOps', function() {
       });
     });
 
-    it('getOpsToSnapshot ignoreMissingOps option returns available ops when missing ops', function(done) {
+    it('getOpsToSnapshot ignoreMissingOps option returns ops up to the first missing op', function(done) {
       db.getSnapshot(collection, id, {$submit: true}, null, function(error, snapshot) {
         if (error) done(error);
         db.getOpsToSnapshot(collection, id, 0, snapshot, {ignoreMissingOps: true}, function(error, ops) {
