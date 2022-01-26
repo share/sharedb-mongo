@@ -439,11 +439,15 @@ ShareDbMongo.prototype.getOpsToSnapshot = function(collectionName, id, from, sna
     var err = ShareDbMongo.missingLastOperationError(collectionName, id);
     return callback(err);
   }
+  var options = Object.assign({}, options);
   var to = null;
   this._getOps(collectionName, id, from, to, options, function(err, ops) {
     if (err) return callback(err);
     var filtered = getLinkedOps(ops, null, snapshot._opLink);
-    var err = (options || {}).ignoreMissingOps ? null : checkOpsFrom(collectionName, id, filtered, from);
+    var err = null;
+    if (!options.ignoreMissingOps) {
+      err = checkOpsFrom(collectionName, id, filtered, from);
+    }
     if (err) return callback(err);
     callback(null, filtered);
   });
@@ -451,6 +455,7 @@ ShareDbMongo.prototype.getOpsToSnapshot = function(collectionName, id, from, sna
 
 ShareDbMongo.prototype.getOps = function(collectionName, id, from, to, options, callback) {
   var self = this;
+  var options = Object.assign({}, options);
   this._getOpLink(collectionName, id, to, options, function(err, opLink) {
     if (err) return callback(err);
     // We need to fetch slightly more ops than requested in order to work backwards along
@@ -468,7 +473,10 @@ ShareDbMongo.prototype.getOps = function(collectionName, id, from, to, options, 
     self._getOps(collectionName, id, from, fetchOpsTo, options, function(err, ops) {
       if (err) return callback(err);
       var filtered = filterOps(ops, opLink, to);
-      var err = (options || {}).ignoreMissingOps ? null : checkOpsFrom(collectionName, id, filtered, from);
+      var err = null;
+      if (!options.ignoreMissingOps) {
+        err = checkOpsFrom(collectionName, id, filtered, from);
+      }
       if (err) return callback(err);
       callback(null, filtered);
     });
