@@ -130,24 +130,3 @@ function commitOpChain(db, mongo, collection, id, ops, previousOpId, version, ca
     });
   });
 }
-
-function callInSeries(callbacks, args) {
-  if (!callbacks.length) return;
-  args = args || [];
-  var error = args.shift();
-
-  if (error) {
-    var finalCallback = callbacks[callbacks.length - 1];
-    return finalCallback(error);
-  }
-
-  var callback = callbacks.shift();
-  if (callbacks.length) {
-    args.push(function() {
-      var args = Array.from(arguments);
-      callInSeries(callbacks, args);
-    });
-  }
-
-  callback.apply(callback, args);
-}
