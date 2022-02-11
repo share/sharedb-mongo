@@ -1,6 +1,5 @@
 var expect = require('chai').expect;
 var ShareDbMongo = require('..');
-var getQuery = require('sharedb-mingo-memory/get-query');
 var sinon = require('sinon');
 
 var mongoUrl = process.env.TEST_MONGO_URL || 'mongodb://localhost:27017/test';
@@ -18,8 +17,6 @@ function create(callback) {
     });
   });
 };
-
-require('sharedb/test/db')({create: create, getQuery: getQuery});
 
 describe('getOps', function() {
   beforeEach(function(done) {
