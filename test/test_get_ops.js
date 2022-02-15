@@ -20,7 +20,7 @@ function create(options, callback) {
 };
 
 // loop thru strict linking options
-for (strictLinkingOption in [true, false]) {
+[true, false].forEach(function (strictLinkingOption) {
   describe('getOps with strict linking ' + strictLinkingOption, function() {
     beforeEach(function(done) {
       var self = this;
