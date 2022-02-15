@@ -5,11 +5,11 @@ var sinon = require('sinon');
 var mongoUrl = process.env.TEST_MONGO_URL || 'mongodb://localhost:27017/test';
 
 function create(options, callback) {
-  const opts = Object.assign({
+  var opts = Object.assign({
     mongoOptions: {},
     getOpsWithoutStrictLinking: true
   }, options);
-  const db = new ShareDbMongo(mongoUrl, opts);
+  var db = new ShareDbMongo(mongoUrl, opts);
   db.getDbs(function(err, mongo) {
     if (err) return callback(err);
     mongo.dropDatabase(function(err) {
@@ -22,7 +22,7 @@ function create(options, callback) {
 describe('getOps with strict linking', function() {
   beforeEach(function(done) {
     var self = this;
-    create({ getOpsWithoutStrictLinking: true }, function(err, db, mongo) {
+    create({getOpsWithoutStrictLinking: true}, function(err, db, mongo) {
       if (err) return done(err);
       self.db = db;
       self.mongo = mongo;
@@ -108,7 +108,7 @@ describe('getOps with strict linking', function() {
 describe('getOps without strict linking', function() {
   beforeEach(function(done) {
     var self = this;
-    create({ getOpsWithoutStrictLinking: false }, function(err, db, mongo) {
+    create({getOpsWithoutStrictLinking: false}, function(err, db, mongo) {
       if (err) return done(err);
       self.db = db;
       self.mongo = mongo;
