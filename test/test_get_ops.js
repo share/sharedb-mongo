@@ -20,7 +20,7 @@ function create(options, callback) {
 };
 
 // loop thru strict linking options
-[true, false].forEach(function (strictLinkingOption) {
+[true, false].forEach(function(strictLinkingOption) {
   describe('getOps with strict linking ' + strictLinkingOption, function() {
     beforeEach(function(done) {
       var self = this;
@@ -108,7 +108,7 @@ function create(options, callback) {
       });
     });
   });
-}
+});
 
 describe('getOps without strict linking', function() {
   beforeEach(function(done) {
