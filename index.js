@@ -345,7 +345,7 @@ ShareDbMongo.prototype.getSnapshot = function(collectionName, id, fields, option
 
       collection.find(request.query, request.findOptions).limit(1).project(projection).next(function(err, doc) {
         if (err) return callback(err);
-        var snapshot = (doc) ? castToSnapshot(doc) : new MongoSnapshot(id, 0, null, undefined);
+        var snapshot = (doc) ? castToSnapshot(doc, fields, options) : new MongoSnapshot(id, 0, null, undefined);
         callback(null, snapshot);
       });
     });
@@ -367,7 +367,7 @@ ShareDbMongo.prototype.getSnapshotBulk = function(collectionName, ids, fields, o
         if (err) return callback(err);
         var snapshotMap = {};
         for (var i = 0; i < docs.length; i++) {
-          var snapshot = castToSnapshot(docs[i]);
+          var snapshot = castToSnapshot(docs[i], fields, options);
           snapshotMap[snapshot.id] = snapshot;
         }
         for (var i = 0; i < ids.length; i++) {
@@ -894,7 +894,7 @@ ShareDbMongo.prototype.query = function(collectionName, inputQuery, fields, opti
       if (err) return callback(err);
       var snapshots = [];
       for (var i = 0; i < results.length; i++) {
-        var snapshot = castToSnapshot(results[i]);
+        var snapshot = castToSnapshot(results[i], fields, options);
         snapshots.push(snapshot);
       }
       callback(null, snapshots, extra);
@@ -1406,7 +1406,7 @@ function castToDoc(id, snapshot, opLink) {
   return doc;
 }
 
-function castToSnapshot(doc) {
+function castToSnapshot(doc, fields, options) {
   var id = doc._id;
   var version = doc._v;
   var type = doc._type;
@@ -1423,7 +1423,10 @@ function castToSnapshot(doc) {
   delete data._id;
   delete data._v;
   delete data._type;
-  delete data._m;
+  var includeMetadata = (fields && fields.$submit) || (options && options.metadata);
+  if(!includeMetadata) {
+    delete data._m;
+  }
   delete data._o;
   return new MongoSnapshot(id, version, type, data, meta, opLink);
 }
