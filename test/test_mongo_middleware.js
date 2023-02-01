@@ -16,10 +16,11 @@ function create(callback) {
   var db = new ShareDbMongo(mongoUrl);
   db.getDbs(function(err, mongo) {
     if (err) return callback(err);
-    mongo.dropDatabase(function(err) {
-      if (err) return callback(err);
-      callback(null, db, mongo);
-    });
+    mongo.dropDatabase()
+      .then(function() {
+        callback(null, db, mongo);
+      })
+      .catch(callback);
   });
 }
 

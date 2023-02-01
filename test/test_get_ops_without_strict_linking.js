@@ -12,10 +12,11 @@ function create(callback) {
   });
   db.getDbs(function(err, mongo) {
     if (err) return callback(err);
-    mongo.dropDatabase(function(err) {
-      if (err) return callback(err);
-      callback(null, db, mongo);
-    });
+    mongo.dropDatabase()
+      .then(function() {
+        callback(null, db, mongo);
+      })
+      .catch(callback);
   });
 };
 
@@ -78,7 +79,11 @@ describe('getOpsWithoutStrictLinking: true', function() {
 
       callInSeries([
         function(next) {
-          mongo.collection('o_' + collection).insertOne(spuriousOp, next);
+          mongo.collection('o_' + collection).insertOne(spuriousOp)
+            .then(function(result) {
+              next(null, result);
+            })
+            .catch(next);
         },
         function(result, next) {
           db.getOps(collection, id, 0, 2, null, next);
@@ -99,7 +104,11 @@ describe('getOpsWithoutStrictLinking: true', function() {
 
       callInSeries([
         function(next) {
-          mongo.collection('o_' + collection).insertOne(spuriousOp, next);
+          mongo.collection('o_' + collection).insertOne(spuriousOp)
+            .then(function(result) {
+              next(null, result);
+            })
+            .catch(next);
         },
         function(result, next) {
           db.getOps(collection, id, 0, 2, null, next);
@@ -125,7 +134,11 @@ describe('getOpsWithoutStrictLinking: true', function() {
 
       callInSeries([
         function(next) {
-          mongo.collection('o_' + collection).insertMany(spuriousOps, next);
+          mongo.collection('o_' + collection).insertMany(spuriousOps)
+            .then(function(result) {
+              next(null, result);
+            })
+            .catch(next);
         },
         function(result, next) {
           db.getOps(collection, id, 0, 2, null, next);
@@ -160,10 +173,11 @@ function commitOpChain(db, mongo, collection, id, ops, previousOpId, version, ca
   var snapshot = {id: id, v: version + 1, type: 'json0', data: {}, m: null, _opLink: previousOpId};
   db.commit(collection, id, op, snapshot, null, function(error) {
     if (error) return callback(error);
-    mongo.collection('o_' + collection).find({d: id, v: version}).next(function(error, op) {
-      if (error) return callback(error);
-      commitOpChain(db, mongo, collection, id, ops, op._id, ++version, callback);
-    });
+    mongo.collection('o_' + collection).find({d: id, v: version}).next()
+      .then(function(op) {
+        commitOpChain(db, mongo, collection, id, ops, op._id, ++version, callback);
+      })
+      .catch(callback);
   });
 }
 

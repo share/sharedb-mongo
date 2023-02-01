@@ -9,10 +9,11 @@ function create(callback) {
   var db = new ShareDbMongo(mongoUrl);
   db.getDbs(function(err, mongo) {
     if (err) return callback(err);
-    mongo.dropDatabase(function(err) {
-      if (err) return callback(err);
-      callback(null, db, mongo);
-    });
+    mongo.dropDatabase()
+      .then(function() {
+        callback(null, db, mongo);
+      })
+      .catch(callback);
   });
 };
 
@@ -38,8 +39,7 @@ describe('mongo db', function() {
       var mongo = this.mongo;
       this.db.commit('testcollection', 'foo', {v: 0, create: {}}, {}, null, function(err) {
         if (err) return done(err);
-        mongo.collection('o_testcollection').indexInformation(function(err, indexes) {
-          if (err) return done(err);
+        mongo.collection('o_testcollection').indexInformation().then(function(indexes) {
           // Index for getting document(s) ops
           expect(indexes['d_1_v_1']).ok;
           // Index for checking committed op(s) by src and seq
@@ -51,8 +51,7 @@ describe('mongo db', function() {
 
     it('respects unique indexes', function(done) {
       var db = this.db;
-      this.mongo.collection('testcollection').createIndex({x: 1}, {unique: true}, function(err) {
-        if (err) return done(err);
+      this.mongo.collection('testcollection').createIndex({x: 1}, {unique: true}).then(function() {
         db.commit('testcollection', 'foo', {v: 0, create: {}}, {v: 1, data: {x: 7}}, null, function(err) {
           if (err) return done(err);
           db.commit('testcollection', 'bar', {v: 0, create: {}}, {v: 1, data: {x: 7}}, null, function(err) {
@@ -381,10 +380,11 @@ describe('mongo db connection', function() {
       // logic.
       this.db.getDbs(function(err, mongo) {
         if (err) return done(err);
-        mongo.dropDatabase(function(err) {
-          if (err) return done(err);
-          done();
-        });
+        mongo.dropDatabase()
+          .then(function() {
+            done();
+          })
+          .catch(done);
       });
     });
 
