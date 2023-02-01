@@ -28,6 +28,7 @@ jobs:
         - 4.2
         - 4.4
         - 5.0
+        - 6.0
     services:
       mongodb:
         image: mongo:${{ matrix.mongodb }}
