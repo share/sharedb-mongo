@@ -54,22 +54,23 @@ function ShareDbMongo(mongo, options) {
   // Track whether the close method has been called
   this.closed = false;
 
+  this.mongo = null;
+  this._mongoClient = null;
+  this.mongoPoll = null;
+  this._mongoPollClient = null;
+
   if (typeof mongo === 'string' || typeof mongo === 'function') {
+    var self = this;
     // We can only get the mongodb client instance in a callback, so
     // buffer up any requests received in the meantime
-    var connection = this._connect(mongo, options);
-    this.mongo = connection.then(function(result) {
-      return result.mongo;
-    });
-    this._mongoClient = connection.then(function(result) {
-      return result.mongoClient;
-    });
-    this.mongoPoll = connection.then(function(result) {
-      return result.mongoPoll;
-    });
-    this._mongoPollClient = connection.then(function(result) {
-      return result.mongoPollClient;
-    });
+    this._connection = this._connect(mongo, options)
+      .then(function(result) {
+        self.mongo = result.mongo;
+        self._mongoClient = result.mongoClient;
+        self.mongoPoll = result.mongoPoll;
+        self._mongoPollClient = result.mongoPollClient;
+        return result;
+      });
   } else {
     throw new Error('deprecated: pass mongo as url string or function with callback');
   }
@@ -121,11 +122,10 @@ ShareDbMongo.prototype.getDbs = function(callback) {
     var err = ShareDbMongo.alreadyClosedError();
     return callback(err);
   }
-  Promise.all([this.mongo, this.mongoPoll])
-    .then(function(dbs) {
-      callback(null, dbs[0], dbs[1]);
-    })
-    .catch(callback);
+  this._connection
+    .then(function(result) {
+      callback(null, result.mongo, result.mongoPoll);
+    }, callback);
 };
 
 function isLegacyMongoClient(client) {
@@ -167,9 +167,9 @@ ShareDbMongo.prototype._connect = function(mongo, options) {
 function connect(mongo, options) {
   if (typeof mongo === 'function') {
     return new Promise(function(resolve, reject) {
-      mongo(function(error, db) {
+      mongo(function(error, client) {
         if (error) return reject(error);
-        resolve(db);
+        resolve(client);
       });
     });
   }
@@ -186,9 +186,12 @@ function connect(mongo, options) {
   delete options.allowAggregateQueries;
   delete options.getOpsWithoutStrictLinking;
 
-  if (typeof mongodb.connect === 'function') return mongodb.connect(mongo, options);
-  var client = new mongodb.MongoClient(mongo, options);
-  return client.connect();
+  if (typeof mongodb.connect === 'function') {
+    return mongodb.connect(mongo, options);
+  } else {
+    var client = new mongodb.MongoClient(mongo, options);
+    return client.connect();
+  }
 }
 
 ShareDbMongo.prototype.close = function(callback) {
@@ -203,20 +206,13 @@ ShareDbMongo.prototype.close = function(callback) {
     if (err && err.code === 5101) return callback();
     if (err) return callback(err);
     self.closed = true;
-    self._mongoClient
-      .then(function(mongoClient) {
-        return mongoClient.close();
-      })
+    self._mongoClient.close()
       .then(function() {
-        return self._mongoPollClient;
-      })
-      .then(function(mongoPollClient) {
-        return mongoPollClient && mongoPollClient.close();
-      })
+        return self._mongoPollClient && self._mongoPollClient.close();
+      }, callback)
       .then(function() {
         callback(null);
-      })
-      .catch(callback);
+      }, callback);
   });
 };
 
@@ -270,8 +266,7 @@ ShareDbMongo.prototype._writeOp = function(collectionName, id, op, snapshot, cal
     opCollection.insertOne(doc)
       .then(function(result) {
         callback(null, result);
-      })
-      .catch(callback);
+      }, callback);
   });
 };
 
@@ -281,8 +276,7 @@ ShareDbMongo.prototype._deleteOp = function(collectionName, opId, callback) {
     opCollection.deleteOne({_id: opId})
       .then(function(result) {
         callback(null, result);
-      })
-      .catch(callback);
+      }, callback);
   });
 };
 
@@ -297,17 +291,19 @@ ShareDbMongo.prototype._writeSnapshot = function(request, id, snapshot, opId, ca
           return callback(middlewareErr);
         }
         collection.insertOne(request.documentToWrite)
-          .then(function() {
-            callback(null, true);
-          })
-          .catch(function(err) {
-            // Return non-success instead of duplicate key error, since this is
-            // expected to occur during simultaneous creates on the same id
-            if (err.code === 11000 && /\b_id_\b/.test(err.message)) {
-              return callback(null, false);
+          .then(
+            function() {
+              callback(null, true);
+            },
+            function(err) {
+              // Return non-success instead of duplicate key error, since this is
+              // expected to occur during simultaneous creates on the same id
+              if (err.code === 11000 && /\b_id_\b/.test(err.message)) {
+                return callback(null, false);
+              }
+              return callback(err);
             }
-            return callback(err);
-          });
+          );
       });
     } else {
       request.query = {_id: id, _v: request.documentToWrite._v - 1};
@@ -319,8 +315,7 @@ ShareDbMongo.prototype._writeSnapshot = function(request, id, snapshot, opId, ca
           .then(function(result) {
             var succeeded = !!result.modifiedCount;
             callback(null, succeeded);
-          })
-          .catch(callback);
+          }, callback);
       });
     }
   });
@@ -344,8 +339,7 @@ ShareDbMongo.prototype.getSnapshot = function(collectionName, id, fields, option
         .then(function(doc) {
           var snapshot = (doc) ? castToSnapshot(doc) : new MongoSnapshot(id, 0, null, undefined);
           callback(null, snapshot);
-        })
-        .catch(callback);
+        }, callback);
     });
   });
 };
@@ -374,8 +368,7 @@ ShareDbMongo.prototype.getSnapshotBulk = function(collectionName, ids, fields, o
             snapshotMap[id] = new MongoSnapshot(id, 0, null, undefined);
           }
           callback(null, snapshotMap);
-        })
-        .catch(callback);
+        }, callback);
     });
   });
 };
@@ -425,12 +418,11 @@ ShareDbMongo.prototype.getOpCollection = function(collectionName, callback) {
     collection.createIndex({d: 1, v: 1}, {background: true})
       .then(function() {
         return collection.createIndex({src: 1, seq: 1, v: 1}, {background: true});
-      })
+      }, callback)
       .then(function() {
         self.opIndexes[collectionName] = true;
         callback(null, collection);
-      })
-      .catch(callback);
+      }, callback);
   });
 };
 
@@ -564,8 +556,7 @@ ShareDbMongo.prototype.getCommittedOpVersion = function(collectionName, id, snap
           }
           callback();
         });
-      })
-      .catch(callback);
+      }, callback);
   });
 };
 
@@ -681,8 +672,7 @@ ShareDbMongo.prototype._getOps = function(collectionName, id, from, to, options,
     opCollection.find(query).project(projection).sort(sort).toArray()
       .then(function(result) {
         callback(null, result);
-      })
-      .catch(callback);
+      }, callback);
   });
 };
 
@@ -782,21 +772,22 @@ function getFirstOpWithUniqueVersion(cursor, opLinkValidator, callback) {
   }
 
   cursor.next()
-    .then(function(op) {
-      opLinkValidator.push(op);
-      getFirstOpWithUniqueVersion(cursor, opLinkValidator, callback);
-    })
-    .catch(function(error) {
-      closeCursor(cursor, callback, error);
-    });
+    .then(
+      function(op) {
+        opLinkValidator.push(op);
+        getFirstOpWithUniqueVersion(cursor, opLinkValidator, callback);
+      },
+      function(error) {
+        closeCursor(cursor, callback, error);
+      }
+    );
 }
 
 function closeCursor(cursor, callback, error, returnValue) {
   cursor.close()
     .then(function() {
       callback(error, returnValue);
-    })
-    .catch(callback);
+    }, callback);
 }
 
 ShareDbMongo.prototype._getSnapshotOpLink = function(collectionName, id, options, callback) {
@@ -813,8 +804,7 @@ ShareDbMongo.prototype._getSnapshotOpLink = function(collectionName, id, options
       collection.find(query, request.findOptions).limit(1).project(projection).next()
         .then(function(result) {
           callback(null, result);
-        })
-        .catch(callback);
+        }, callback);
     });
   });
 };
@@ -833,8 +823,7 @@ ShareDbMongo.prototype._getSnapshotOpLinkBulk = function(collectionName, ids, op
       collection.find(query, request.findOptions).project(projection).toArray()
         .then(function(result) {
           callback(null, result);
-        })
-        .catch(callback);
+        }, callback);
     });
   });
 };
@@ -899,8 +888,7 @@ ShareDbMongo.prototype._query = function(collection, inputQuery, projection, cal
   cursor.toArray()
     .then(function(result) {
       callback(null, result);
-    })
-    .catch(callback);
+    }, callback);
 };
 
 ShareDbMongo.prototype.query = function(collectionName, inputQuery, fields, options, callback) {
@@ -976,8 +964,7 @@ ShareDbMongo.prototype.queryPollDoc = function(collectionName, id, inputQuery, o
     collection.find(parsed.query).limit(1).project({_id: 1}).next()
       .then(function(doc) {
         callback(null, !!doc);
-      })
-      .catch(callback);
+      }, callback);
   });
 };
 
@@ -1505,16 +1492,14 @@ var collectionOperationsMap = {
     collection.distinct(value.field, query)
       .then(function(result) {
         cb(null, result);
-      })
-      .catch(cb);
+      }, cb);
   },
   $aggregate: function(collection, query, value, cb) {
     var cursor = collection.aggregate(value);
     cursor.toArray()
       .then(function(result) {
         cb(null, result);
-      })
-      .catch(cb);
+      }, cb);
   },
   $mapReduce: function(collection, query, value, cb) {
     if (typeof value !== 'object') {
@@ -1529,8 +1514,7 @@ var collectionOperationsMap = {
     collection.mapReduce(value.map, value.reduce, mapReduceOptions)
       .then(function(result) {
         cb(null, result);
-      })
-      .catch(cb);
+      }, cb);
   }
 };
 
@@ -1539,22 +1523,19 @@ var cursorOperationsMap = {
     cursor.count()
       .then(function(result) {
         cb(null, result);
-      })
-      .catch(cb);
+      }, cb);
   },
   $explain: function(cursor, verbosity, cb) {
     cursor.explain(verbosity)
       .then(function(result) {
         cb(null, result);
-      })
-      .catch(cb);
+      }, cb);
   },
   $map: function(cursor, fn, cb) {
     cursor.map(fn)
       .then(function(result) {
         cb(null, result);
-      })
-      .catch(cb);
+      }, cb);
   }
 };
 
