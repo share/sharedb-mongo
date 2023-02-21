@@ -61,8 +61,6 @@ function ShareDbMongo(mongo, options) {
 
   if (typeof mongo === 'string' || typeof mongo === 'function') {
     var self = this;
-    // We can only get the mongodb client instance in a callback, so
-    // buffer up any requests received in the meantime
     this._connection = this._connect(mongo, options)
       .then(function(result) {
         self.mongo = result.mongo;
