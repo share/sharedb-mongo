@@ -207,7 +207,7 @@ ShareDbMongo.prototype.close = function(callback) {
     self._mongoClient.close()
       .then(function() {
         return self._mongoPollClient && self._mongoPollClient.close();
-      }, callback)
+      })
       .then(function() {
         callback(null);
       }, callback);
@@ -416,7 +416,7 @@ ShareDbMongo.prototype.getOpCollection = function(collectionName, callback) {
     collection.createIndex({d: 1, v: 1}, {background: true})
       .then(function() {
         return collection.createIndex({src: 1, seq: 1, v: 1}, {background: true});
-      }, callback)
+      })
       .then(function() {
         self.opIndexes[collectionName] = true;
         callback(null, collection);
