@@ -17,6 +17,7 @@ jobs:
     name: Node.js ${{ matrix.node }} + mongoDB ${{ matrix.mongodb }}
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         node:
         - 14
