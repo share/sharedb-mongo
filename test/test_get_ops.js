@@ -12,10 +12,11 @@ function create(options, callback) {
   var db = new ShareDbMongo(mongoUrl, opts);
   db.getDbs(function(err, mongo) {
     if (err) return callback(err);
-    mongo.dropDatabase(function(err) {
-      if (err) return callback(err);
-      callback(null, db, mongo);
-    });
+    mongo.dropDatabase()
+      .then(function() {
+        callback(null, db, mongo);
+      })
+      .catch(callback);
   });
 };
 
@@ -62,7 +63,9 @@ function create(options, callback) {
 
         commitOpChain(db, mongo, collection, id, ops, function(error) {
           if (error) done(error);
-          mongo.collection('o_' + collection).deleteOne({v: 1}, done);
+          mongo.collection('o_' + collection).deleteOne({v: 1}).then(function() {
+            done();
+          });
         });
       });
 
@@ -127,8 +130,7 @@ function commitOpChain(db, mongo, collection, id, ops, previousOpId, version, ca
   var snapshot = {id: id, v: version + 1, type: 'json0', data: {}, m: null, _opLink: previousOpId};
   db.commit(collection, id, op, snapshot, null, function(error) {
     if (error) return callback(error);
-    mongo.collection('o_' + collection).find({d: id, v: version}).next(function(error, op) {
-      if (error) return callback(error);
+    mongo.collection('o_' + collection).find({d: id, v: version}).next().then(function(op) {
       commitOpChain(db, mongo, collection, id, ops, (op ? op._id : null), ++version, callback);
     });
   });
