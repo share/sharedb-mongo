@@ -8,6 +8,7 @@
     "sharedb": "^1.9.1 || ^2.0.0 || ^3.0.0"
   },
   "devDependencies": {
+    "async": "^3.2.4",
     "chai": "^4.2.0",
     "coveralls": "^3.0.7",
     "eslint": "^5.16.0",
