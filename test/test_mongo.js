@@ -334,9 +334,10 @@ describe('mongo db', function() {
     });
 
     it('$mapReduce queries should work when allowJavaScriptQuery == true', function(done) {
-      if (process.env._SHAREDB_MONGODB_DRIVER === 'mongodb5') {
-        // This function was removed in mongodb5:
-        // https://github.com/mongodb/node-mongodb-native/pull/3511
+      // This function was removed in mongodb5:
+      // https://github.com/mongodb/node-mongodb-native/pull/3511
+      var mapReduceSupported = typeof this.db.mongo.collection('test').mapReduce === 'function';
+      if (!mapReduceSupported) {
         return done();
       }
       var snapshots = [
