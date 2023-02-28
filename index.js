@@ -1504,6 +1504,11 @@ var collectionOperationsMap = {
       var err = ShareDbMongo.malformedQueryOperatorError('$mapReduce');
       return cb(err);
     }
+    // This function was removed in mongodb5:
+    // https://github.com/mongodb/node-mongodb-native/pull/3511
+    if (typeof collection.mapReduce !== 'function') {
+      var err = ShareDbMongo.$mapReduceDisabledError();
+    }
     var mapReduceOptions = {
       query: query,
       out: {inline: 1},
