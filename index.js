@@ -126,16 +126,6 @@ ShareDbMongo.prototype.getDbs = function(callback) {
     }, callback);
 };
 
-function isLegacyMongoClient(client) {
-  // mongodb 2.0 connect returns a DB object that also implements the
-  // functionality of client, such as `close()`. mongodb 3.0 connect returns a
-  // Client without the `collection()` method
-  return (
-    typeof client.collection === 'function' &&
-    typeof client.close === 'function'
-  );
-}
-
 ShareDbMongo.prototype._connect = function(mongo, options) {
   // Create the mongo connection client connections if needed
   //
@@ -148,17 +138,12 @@ ShareDbMongo.prototype._connect = function(mongo, options) {
   return Promise.all(connections).then(function(clients) {
     var mongoClient = clients[0];
     var mongoPollClient = clients[1];
-    var result = {
-      mongo: mongoClient,
+    return {
+      mongo: mongoClient.db(),
       mongoClient: mongoClient,
-      mongoPoll: mongoPollClient,
+      mongoPoll: mongoPollClient && mongoPollClient.db(),
       mongoPollClient: mongoPollClient
     };
-    if (!isLegacyMongoClient(mongoClient)) {
-      result.mongo = mongoClient.db();
-      if (mongoPollClient) result.mongoPoll = mongoPollClient.db();
-    }
-    return result;
   });
 };
 
