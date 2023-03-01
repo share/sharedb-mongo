@@ -19,7 +19,7 @@
     "mongodb5": "npm:mongodb@^5.0.0",
     "nyc": "^14.1.1",
     "ot-json1": "^1.0.1",
-    "sharedb-mingo-memory": "^1.1.1",
+    "sharedb-mingo-memory": "^2.0.0",
     "sinon": "^6.1.5",
     "sinon-chai": "^3.7.0"
   },

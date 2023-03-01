@@ -1034,10 +1034,44 @@ function getInnerFields(params, fields) {
 function opContainsAnyField(op, fields) {
   for (var i = 0; i < op.length; i++) {
     var component = op[i];
-    if (component.p.length === 0) {
+    if (Array.isArray(component.p)) {
+      // json0 op component:
+      //
+      // Each op component has its own array of `p` path segments from doc root.
+      if (component.p.length === 0) {
+        return true;
+      } else if (fields[component.p[0]]) {
+        return true;
+      }
+    } else if (typeof component === 'string') {
+      // json1 field descent from root:
+      //
+      // First string in top-level array means all subsequent operations will be
+      // underneath that top-level field, no need to continue iterating.
+      return fields[component];
+    } else if (hasOwnProperty(component, 'p') ||
+        hasOwnProperty(component, 'r') ||
+        hasOwnProperty(component, 'd') ||
+        hasOwnProperty(component, 'i') ||
+        hasOwnProperty(component, 'e')) {
+      // json1 root-level operation:
+      //
+      // If we encounter an operation at top level prior to encountering a string,
+      // (field descent) then the operation affects the entire document.
       return true;
-    } else if (fields[component.p[0]]) {
-      return true;
+    } else if (Array.isArray(component)) {
+      // json1 child operation list:
+      //
+      // In a canonical json1 op, if we encounter a child op prior to encountering
+      // a string (field descent), then the child should start with a field descent.
+      // If that weren't the case, the op would be pulled up to the top-level array.
+      var descendant = component;
+      while (typeof descendant[0] !== 'string') {
+        descendant = descendant[0];
+      }
+      if (fields[descendant[0]]) {
+        return true;
+      }
     }
   }
   return false;
@@ -1445,6 +1479,10 @@ function isPlainObject(value) {
       Object.getPrototypeOf(value) === null
     )
   );
+}
+
+function hasOwnProperty(obj, prop) {
+  return Object.prototype.hasOwnProperty.call(obj, prop);
 }
 
 // Convert a simple map of fields that we want into a mongo projection. This

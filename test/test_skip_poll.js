@@ -1,4 +1,5 @@
 var expect = require('chai').expect;
+var json1 = require('ot-json1');
 var ShareDbMongo = require('../index');
 
 describe('skipPoll', function() {
@@ -110,6 +111,51 @@ describe('skipPoll', function() {
           it('multiple ops including empty path', function() {
             assertNotSkips({op: [{p: ['a'], dummyOp: 1}, {p: [], dummyOp: 1}]}, query);
             assertNotSkips({op: [{p: [], dummyOp: 1}, {p: ['x'], dummyOp: 1}]}, query);
+          });
+
+          it('json1 root-level changes', function() {
+            // Root-level doc changes should always cause a query poll.
+            assertNotSkips({op: json1.insertOp('', {brandNew: 'value'})}, query);
+            assertNotSkips({op: json1.removeOp('')}, query);
+          });
+
+          it('json1 ops not affecting queried fields', function() {
+            assertSkips({op: json1.insertOp(['notQueried'], 'hello')}, query);
+            assertSkips({op: json1.moveOp(['notQueried'], ['alsoNotQueried'])}, query);
+            assertSkips({op: json1.removeOp(['notQueried'], 'hello')}, query);
+          });
+
+          it('json1 insert ops', function() {
+            assertIfSkips({op: json1.insertOp(['a'], 'hello')}, query, !has(fields, 'a'));
+            assertIfSkips({op: json1.insertOp(['a', 'b'], 'hello')}, query, !has(fields, 'a'));
+            assertIfSkips({op: json1.insertOp(['a', 0], 'hello')}, query, !has(fields, 'a'));
+          });
+
+          it('json1 remove ops', function() {
+            assertIfSkips({op: json1.removeOp(['a'], 'hello')}, query, !has(fields, 'a'));
+            assertIfSkips({op: json1.removeOp(['a', 'b'], 'hello')}, query, !has(fields, 'a'));
+            assertIfSkips({op: json1.removeOp(['a', 0], 'hello')}, query, !has(fields, 'a'));
+          });
+
+          it('json1 move ops', function() {
+            assertIfSkips({op: json1.moveOp(['a'], ['x'])}, query, !has(fields, 'a') && !has(fields, 'x'));
+            assertIfSkips({op: json1.moveOp(['x'], ['a'])}, query, !has(fields, 'x') && !has(fields, 'a'));
+            assertIfSkips({op: json1.moveOp(['a'], ['notQueried'])}, query, !has(fields, 'a'));
+            assertIfSkips({op: json1.moveOp(['notQueried'], ['a'])}, query, !has(fields, 'a'));
+            assertSkips({op: json1.moveOp(['notQueried'], ['alsoNotQueried'])}, query);
+          });
+
+          it('json1 composed ops', function() {
+            var compositeNotQueried = json1.type.compose(
+              json1.insertOp(['notQueried1'], 'hello'),
+              json1.moveOp(['notQueried2'], ['notQueried3'])
+            );
+            assertSkips({op: compositeNotQueried}, query);
+            var compositeQueried = json1.type.compose(
+              json1.insertOp(['notQueried1'], 'hello'),
+              json1.moveOp(['notQueried2'], ['a'])
+            );
+            assertIfSkips({op: compositeQueried}, query, !has(fields, 'a'));
           });
         });
       }
