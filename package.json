@@ -5,7 +5,7 @@
   "main": "index.js",
   "dependencies": {
     "mongodb": "^3.1.13 || ^4.0.0 || ^5.0.0",
-    "sharedb": "^1.9.1 || ^2.0.0 || ^3.0.0"
+    "sharedb": "^1.9.1 || ^2.0.0 || ^3.0.0 || ^4.0.0"
   },
   "devDependencies": {
     "async": "^3.2.4",
@@ -19,8 +19,8 @@
     "mongodb5": "npm:mongodb@^5.0.0",
     "nyc": "^14.1.1",
     "ot-json1": "^1.0.1",
-    "sharedb-mingo-memory": "^1.1.1",
-    "sinon": "^6.1.5",
+    "sharedb-mingo-memory": "^1.0.0 || ^2.0.0 || ^3.0.0",
+    "sinon": "^9.2.4",
     "sinon-chai": "^3.7.0"
   },
   "scripts": {
