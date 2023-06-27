@@ -1531,6 +1531,12 @@ var cursorTransformsMap = {
   $batchSize: function(cursor, size) {
     return cursor.batchSize(size);
   },
+  $collation: function(cursor, value) {
+    if (typeof value !== 'object') return null;
+    // The locale attribute is mandatory
+    if (!value.locale) return null;
+    return cursor.collation(value);
+  },
   $comment: function(cursor, text) {
     return cursor.comment(text);
   },
