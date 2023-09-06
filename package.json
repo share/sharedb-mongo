@@ -4,7 +4,7 @@
   "description": "MongoDB database adapter for ShareDB",
   "main": "index.js",
   "dependencies": {
-    "mongodb": "^3.1.13 || ^4.0.0 || ^5.0.0",
+    "mongodb": "^3.1.13 || ^4.0.0 || ^5.0.0 || ^6.0.0",
     "sharedb": "^1.9.1 || ^2.0.0 || ^3.0.0 || ^4.0.0"
   },
   "devDependencies": {
@@ -17,6 +17,7 @@
     "mongodb3": "npm:mongodb@^3.0.0",
     "mongodb4": "npm:mongodb@^4.0.0",
     "mongodb5": "npm:mongodb@^5.0.0",
+    "mongodb6": "npm:mongodb@^6.0.0",
     "nyc": "^14.1.1",
     "ot-json1": "^1.0.1",
     "sharedb-mingo-memory": "^1.0.0 || ^2.0.0 || ^3.0.0",
@@ -30,7 +31,8 @@
     "test:mongodb3": "_SHAREDB_MONGODB_DRIVER=mongodb3 npm test",
     "test:mongodb4": "_SHAREDB_MONGODB_DRIVER=mongodb4 npm test",
     "test:mongodb5": "_SHAREDB_MONGODB_DRIVER=mongodb5 npm test",
-    "test:all": "npm run test:mongodb3 && npm run test:mongodb4 && npm run test:mongodb5",
+    "test:mongodb6": "_SHAREDB_MONGODB_DRIVER=mongodb6 npm test",
+    "test:all": "npm run test:mongodb3 && npm run test:mongodb4 && npm run test:mongodb5 && npm run test:mongodb6",
     "test-cover": "nyc --temp-dir=coverage -r text -r lcov npm run test:all"
   },
   "repository": "git://github.com/share/sharedb-mongo.git",
