@@ -108,6 +108,7 @@ describe('mongo db', function() {
       ];
       var query = {
         y: 2,
+        $sort: {x: 1},
         $map: function(doc) {
           return doc.x;
         }
