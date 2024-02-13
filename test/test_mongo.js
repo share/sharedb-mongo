@@ -100,6 +100,61 @@ describe('mongo db', function() {
       });
     });
 
+    it('$map maps docs with output in extra', function(done) {
+      var snapshots = [
+        {type: 'json0', id: 'test1', v: 1, data: {x: 1, y: 1}},
+        {type: 'json0', id: 'test2', v: 1, data: {x: 2, y: 2}},
+        {type: 'json0', id: 'test3', v: 1, data: {x: 3, y: 2}}
+      ];
+      var query = {
+        y: 2,
+        $sort: {x: 1},
+        $map: function(doc) {
+          return doc.x;
+        }
+      };
+
+      var db = this.db;
+      async.each(snapshots, function(snapshot, cb) {
+        db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, null, cb);
+      }, function(err) {
+        if (err) return done(err);
+        db.query('testcollection', query, null, null, function(err, results, extra) {
+          if (err) return done(err);
+
+          // Since $map can return non-docs, the output is delivered in extra.
+          expect(results).eql([]);
+          expect(extra).to.deep.equal([2, 3]);
+          done();
+        });
+      });
+    });
+
+    it('$explain delivers output in extra', function(done) {
+      var snapshots = [
+        {type: 'json0', id: 'test1', v: 1, data: {x: 1, y: 1}},
+        {type: 'json0', id: 'test2', v: 1, data: {x: 2, y: 2}},
+        {type: 'json0', id: 'test3', v: 1, data: {x: 3, y: 2}}
+      ];
+      var query = {$explain: true, y: 2};
+
+      var db = this.db;
+      async.each(snapshots, function(snapshot, cb) {
+        db.commit('testcollection', snapshot.id, {v: 0, create: {}}, snapshot, null, cb);
+      }, function(err) {
+        if (err) return done(err);
+        db.query('testcollection', query, null, null, function(err, results, extra) {
+          if (err) return done(err);
+
+          expect(results).eql([]);
+          // Just check for the presence of an explain result. The specific structure
+          // could vary between Mongo versions.
+          expect(extra).to.be.an('object');
+          done();
+        });
+      });
+    });
+
     it('$sort, $skip and $limit should order, skip and limit', function(done) {
       var snapshots = [
         {type: 'json0', v: 1, data: {x: 1}, id: 'test1', m: null},
