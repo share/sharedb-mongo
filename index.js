@@ -1510,12 +1510,14 @@ var cursorOperationsMap = {
   $count: function(cursor, value, cb) {
     cursor.count()
       .then(function(result) {
+        cursor.close();
         cb(null, result);
       }, cb);
   },
   $explain: function(cursor, verbosity, cb) {
     cursor.explain(verbosity)
       .then(function(result) {
+        cursor.close();
         cb(null, result);
       }, cb);
   },
