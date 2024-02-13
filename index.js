@@ -1525,7 +1525,6 @@ var cursorOperationsMap = {
     cursor.map(fn)
       .toArray()
       .then(function(result) {
-        cursor.close();
         cb(null, result);
       }, cb);
   }
