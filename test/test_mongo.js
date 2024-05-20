@@ -2,6 +2,7 @@ var expect = require('chai').expect;
 var ShareDbMongo = require('..');
 var getQuery = require('sharedb-mingo-memory/get-query');
 var async = require('async');
+var randomUUID = require('crypto').randomUUID;
 
 var mongoUrl = process.env.TEST_MONGO_URL || 'mongodb://localhost:27017/test';
 
@@ -429,6 +430,50 @@ describe('mongo db', function() {
         });
       });
     });
+  });
+});
+
+describe('options', function() {
+  var db;
+
+  afterEach(function(done) {
+    db.close(done);
+  });
+
+  it('disables index creation', function(done) {
+    var collection = randomUUID();
+    db = new ShareDbMongo(mongoUrl, {disableIndexCreation: true});
+    async.waterfall([
+      db.commit.bind(db, collection, 'foo', {v: 0, create: {}}, {}, null),
+      function(succeeded, next) {
+        db.getDbs(next);
+      },
+      function(mongo, mongoPoll, next) {
+        mongo.collection('o_' + collection).indexInformation().then(function(indexes) {
+          expect(indexes['d_1_v_1']).not.to.be.ok;
+          expect(indexes['src_1_seq_1_v_1']).not.to.be.ok;
+          next();
+        });
+      }
+    ], done);
+  });
+
+  it('disables just the src,seq,v index', function(done) {
+    var collection = randomUUID();
+    db = new ShareDbMongo(mongoUrl, {disableIndexCreation: {src_seq_v: true}});
+    async.waterfall([
+      db.commit.bind(db, collection, 'foo', {v: 0, create: {}}, {}, null),
+      function(succeeded, next) {
+        db.getDbs(next);
+      },
+      function(mongo, mongoPoll, next) {
+        mongo.collection('o_' + collection).indexInformation().then(function(indexes) {
+          expect(indexes['d_1_v_1']).to.be.ok;
+          expect(indexes['src_1_seq_1_v_1']).not.to.be.ok;
+          next();
+        });
+      }
+    ], done);
   });
 });
 

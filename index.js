@@ -384,7 +384,7 @@ ShareDbMongo.prototype.getOpCollection = function(collectionName, callback) {
     var collection = mongo.collection(name);
     // Given the potential problems with creating indexes on the fly, it might
     // be preferrable to disable automatic creation
-    if (self.disableIndexCreation) {
+    if (self.disableIndexCreation === true) {
       return callback(null, collection);
     }
     if (self.opIndexes[collectionName]) {
@@ -398,10 +398,13 @@ ShareDbMongo.prototype.getOpCollection = function(collectionName, callback) {
     // collection this won't be a problem, but this is a dangerous mechanism.
     // Perhaps we should only warn instead of creating the indexes, especially
     // when there is a lot of data in the collection.
-    collection.createIndex({d: 1, v: 1}, {background: true})
-      .then(function() {
-        return collection.createIndex({src: 1, seq: 1, v: 1}, {background: true});
-      })
+
+    var disabledIndexes = self.disableIndexCreation || {};
+    var promises = [
+      collection.createIndex({d: 1, v: 1}, {background: true}),
+      !disabledIndexes.src_seq_v && collection.createIndex({src: 1, seq: 1, v: 1}, {background: true})
+    ];
+    Promise.all(promises)
       .then(function() {
         self.opIndexes[collectionName] = true;
         callback(null, collection);
