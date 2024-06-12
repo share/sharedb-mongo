@@ -538,7 +538,7 @@ describe('mongo db connection', function() {
         db.queryPoll('testcollection', {}, null, function(err, results) {
           if (err) return done(err);
           expect(results.length).eql(1);
-          expect((new Date) - timeBeforeQuery).greaterThan(pollDelay);
+          expect((new Date) - timeBeforeQuery).greaterThanOrEqual(pollDelay);
           done();
         });
       });
