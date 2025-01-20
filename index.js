@@ -77,6 +77,7 @@ function ShareDbMongo(mongo, options) {
 
   this._sessions = Object.create(null);
   this._transactionOpLinks = Object.create(null);
+  this._lockedCollections = Object.create(null);
 };
 
 ShareDbMongo.prototype = Object.create(DB.prototype);
@@ -209,7 +210,47 @@ ShareDbMongo.prototype.commit = function(collectionName, id, op, snapshot, optio
   options = options || {};
   var self = this;
   var request = createRequestForMiddleware(options, collectionName, op);
-  // TODO: Wrap callback to abort transaction on error and tidy up session in .finally()
+
+  var cb = callback;
+  callback = function(error, succeeded) {
+    if (error && error.code === ShareDbMongo.sessionNotStartedError().code) {
+      // Session starting is handled automatically by ShareDB, so if a session hasn't
+      // started, it actually means that a session was closed early, possibly to avoid
+      // a transaction deadlock. In this case, swallow the error and tell ShareDB that
+      // the commit hasn't succeeded, which will trigger a retry (including restarting
+      // the transaction)
+      error = null;
+      succeeded = false;
+    }
+    cb(error, succeeded);
+  };
+
+  // MongoDB locks collections when writing transactions. This can lead to deadlock if
+  // we have two different transactions attempting to update the same collection.
+  // Here, we manually keep track of the collections involved in transactions, so that
+  // we can avoid this deadlock.
+  var isLocked = this._lockedCollections[collectionName] &&
+    this._lockedCollections[collectionName] !== options.transaction;
+
+  if (isLocked) {
+    // In order to avoid deadlock, let's impose a priority system:
+    // - commits without transactions take highest priority, since they're most likely to succeed
+    // - after that, determine priority on alphabetical order of Transaction ID
+    var hasLockPriority = !options.transaction || options.transactionId < this._lockedCollections[collectionName];
+    // If we don't have priority, return a failed write to allow a retry, which should hopefully
+    // allow the other transaction to complete
+    if (!hasLockPriority) return callback(null, false);
+
+    // If we do have lock priority, we should abort the other transaction to unblock our
+    // current transaction
+    // TODO: Wait for this?
+    this.abortTransaction(this._lockedCollections[collectionName], function(error) {
+      // TODO: Handle errors
+    });
+  }
+
+  if (options.transaction) this._lockedCollections[collectionName] = options.transaction;
+
   this._writeOp(collectionName, id, op, snapshot, options, function(err, result) {
     if (err) return callback(err);
     var opId = result.insertedId;
@@ -224,30 +265,70 @@ ShareDbMongo.prototype.commit = function(collectionName, id, op, snapshot, optio
   });
 };
 
+ShareDbMongo.prototype.startTransaction = function(transactionId, callback) {
+  if (typeof transactionId !== 'string') throw new Error('Invalid Transaction ID');
+
+  if (this._sessions[transactionId]) {
+    // TODO: Proper error code
+    return callback(new Error('Transaction already in progress'));
+  }
+
+  this._transactionOpLinks[transactionId] = [];
+  var session = this._sessions[transactionId] = this._mongoClient.startSession();
+  session.startTransaction();
+
+  var self = this;
+  session.once('ended', function() {
+    self._cleanUpTransaction(transactionId);
+  });
+
+  callback();
+};
+
+ShareDbMongo.prototype.restartTransaction = function(transactionId, callback) {
+  this._cleanUpTransaction(transactionId);
+  this.startTransaction(transactionId, callback);
+};
+
 ShareDbMongo.prototype.commitTransaction = function(transactionId, callback) {
-  if (!this._sessions[transactionId]) return callback();
+  var self = this;
+  var cb = function(error) {
+    self._cleanUpTransaction(transactionId);
+    callback(error);
+  };
+
+  if (!this._sessions[transactionId]) return cb();
   this._sessions[transactionId].commitTransaction()
     .then(function() {
-      callback();
-    }, callback);
+      cb();
+    }, cb);
 };
 
 ShareDbMongo.prototype.abortTransaction = function(transactionId, callback) {
-  if (!this._sessions[transactionId]) return callback();
+  var self = this;
+  var cb = function(error) {
+    self._cleanUpTransaction(transactionId);
+    callback(error);
+  };
+
+  if (!this._sessions[transactionId]) return cb();
   this._sessions[transactionId].abortTransaction()
     .then(function() {
-      callback();
-    }, callback);
+      cb();
+    }, cb);
 };
 
-ShareDbMongo.prototype._ensureTransactionStarted = function(transactionId) {
-  if (typeof transactionId !== 'string') return null;
-  if (!this._sessions[transactionId]) {
-    this._sessions[transactionId] = this._mongoClient.startSession();
-    this._sessions[transactionId].startTransaction();
-    this._transactionOpLinks[transactionId] = [];
+ShareDbMongo.prototype._cleanUpTransaction = function(transactionId) {
+  var session = this._sessions[transactionId];
+  if (session) session.endSession();
+  delete this._sessions[transactionId];
+  delete this._transactionOpLinks[transactionId];
+  // TODO: Improve performance?
+  for (var collection in this._lockedCollections) {
+    if (this._lockedCollections[collection] === transactionId) {
+      delete this._lockedCollections[collection];
+    }
   }
-  return this._sessions[transactionId];
 };
 
 function createRequestForMiddleware(options, collectionName, op, fields) {
@@ -279,7 +360,11 @@ ShareDbMongo.prototype._writeOp = function(collectionName, id, op, snapshot, opt
     doc.d = id;
     var transactionLinks = self._transactionOpLinks[options.transaction] || [];
     doc.o = transactionLinks[op.v - 1] || snapshot._opLink;
-    var session = self._ensureTransactionStarted(options.transaction);
+    var session;
+    if (options.transaction) {
+      session = self._sessions[options.transaction];
+      if (!session) return callback(ShareDbMongo.sessionNotStartedError());
+    }
     opCollection.insertOne(doc, {session: session})
       .then(function(result) {
         if (options.transaction) {
@@ -305,7 +390,11 @@ ShareDbMongo.prototype._writeSnapshot = function(request, id, snapshot, opId, op
   this.getCollection(request.collectionName, function(err, collection) {
     if (err) return callback(err);
     request.documentToWrite = castToDoc(id, snapshot, opId);
-    var session = self._ensureTransactionStarted(options.transaction);
+    var session;
+    if (options.transaction) {
+      session = self._sessions[options.transaction];
+      if (!session) return callback(ShareDbMongo.sessionNotStartedError());
+    }
     if (request.documentToWrite._v === 1) {
       self._middleware.trigger(MiddlewareHandler.Actions.beforeCreate, request, function(middlewareErr) {
         if (middlewareErr) {
@@ -1705,6 +1794,10 @@ ShareDbMongo.missingOpsError = function(collectionName, id, from) {
 ShareDbMongo.parseQueryError = function(err) {
   err.code = 5104;
   return err;
+};
+ShareDbMongo.sessionNotStartedError = function() {
+  // TODO: Proper code
+  return {code: 5105, message: 'Session not started'};
 };
 
 // Middleware
