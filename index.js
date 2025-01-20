@@ -75,6 +75,7 @@ function ShareDbMongo(mongo, options) {
 
   this._middleware = new MiddlewareHandler();
 
+  this._transactionConnections = Object.create(null);
   this._sessions = Object.create(null);
   this._transactionOpLinks = Object.create(null);
 };
@@ -83,12 +84,12 @@ ShareDbMongo.prototype = Object.create(DB.prototype);
 
 ShareDbMongo.prototype.projectsSnapshots = true;
 
-ShareDbMongo.prototype.getCollection = function(collectionName, callback) {
+ShareDbMongo.prototype.getCollection = function(collectionName, options, callback) {
   // Check the collection name
   var err = this.validateCollectionName(collectionName);
   if (err) return callback(err);
   // Gotcha: calls back sync if connected or async if not
-  this.getDbs(function(err, mongo) {
+  this.getDbs(options, function(err, mongo) {
     if (err) return callback(err);
     var collection = mongo.collection(collectionName);
     return callback(null, collection);
@@ -100,7 +101,7 @@ ShareDbMongo.prototype._getCollectionPoll = function(collectionName, callback) {
   var err = this.validateCollectionName(collectionName);
   if (err) return callback(err);
   // Gotcha: calls back sync if connected or async if not
-  this.getDbs(function(err, mongo, mongoPoll) {
+  this.getDbs({}, function(err, mongo, mongoPoll) {
     if (err) return callback(err);
     var collection = (mongoPoll || mongo).collection(collectionName);
     return callback(null, collection);
@@ -118,7 +119,15 @@ ShareDbMongo.prototype.getCollectionPoll = function(collectionName, callback) {
   this._getCollectionPoll(collectionName, callback);
 };
 
-ShareDbMongo.prototype.getDbs = function(callback) {
+ShareDbMongo.prototype.getDbs = function(options, callback) {
+  if (typeof options === 'function') {
+    callback = options;
+    options = null;
+  }
+  options = options || {};
+
+  if (options.transaction) return this._getTransactionDbs(options.transaction, callback);
+
   if (this.closed) {
     var err = ShareDbMongo.alreadyClosedError();
     return callback(err);
@@ -127,6 +136,23 @@ ShareDbMongo.prototype.getDbs = function(callback) {
     .then(function(result) {
       callback(null, result.mongo, result.mongoPoll);
     }, callback);
+};
+
+ShareDbMongo.prototype._getTransactionDbs = function(transactionId, callback) {
+  return this._getTransactionClient(transactionId)
+    .then(function(client) {
+      callback(null, client.db());
+    }, callback);
+};
+
+ShareDbMongo.prototype._getTransactionClient = function(transactionId) {
+  if (!this._transactionConnections[transactionId]) {
+    // TODO: this bypasses the creation function, which probably isn't desirable
+    var client = new mongodb.MongoClient(this._mongoClient.s.url);
+    this._transactionConnections[transactionId] = client.connect();
+  }
+
+  return this._transactionConnections[transactionId];
 };
 
 ShareDbMongo.prototype._connect = function(mongo, options) {
@@ -187,7 +213,7 @@ ShareDbMongo.prototype.close = function(callback) {
     };
   }
   var self = this;
-  this.getDbs(function(err) {
+  this.getDbs({}, function(err) {
     // Ignore "already closed"
     if (err && err.code === 5101) return callback();
     if (err) return callback(err);
@@ -206,14 +232,18 @@ ShareDbMongo.prototype.close = function(callback) {
 // **** Commit methods
 
 ShareDbMongo.prototype.commit = function(collectionName, id, op, snapshot, options, callback) {
+  console.log('commit op', op, snapshot);
   options = options || {};
   var self = this;
   var request = createRequestForMiddleware(options, collectionName, op);
   // TODO: Wrap callback to abort transaction on error and tidy up session in .finally()
   this._writeOp(collectionName, id, op, snapshot, options, function(err, result) {
+    console.log('op written', err, op);
     if (err) return callback(err);
     var opId = result.insertedId;
+    console.log('write snapshot...', snapshot);
     self._writeSnapshot(request, id, snapshot, opId, options, function(err, succeeded) {
+      console.log('snapshot written', err, succeeded);
       if (succeeded) return callback(err, succeeded);
       // Cleanup unsuccessful op if snapshot write failed. This is not
       // necessary for data correctness, but it gets rid of clutter
@@ -226,27 +256,30 @@ ShareDbMongo.prototype.commit = function(collectionName, id, op, snapshot, optio
 
 ShareDbMongo.prototype.commitTransaction = function(transactionId, callback) {
   if (!this._sessions[transactionId]) return callback();
-  this._sessions[transactionId].commitTransaction()
-    .then(function() {
-      callback();
-    }, callback);
+  this._sessions[transactionId].then(function(session) {
+    return session.commitTransaction();
+  }, callback);
 };
 
 ShareDbMongo.prototype.abortTransaction = function(transactionId, callback) {
   if (!this._sessions[transactionId]) return callback();
-  this._sessions[transactionId].abortTransaction()
-    .then(function() {
-      callback();
-    }, callback);
+  this._sessions[transactionId].then(function(session) {
+    return session.abortTransaction();
+  }, callback);
 };
 
 ShareDbMongo.prototype._ensureTransactionStarted = function(transactionId) {
-  if (typeof transactionId !== 'string') return null;
+  if (typeof transactionId !== 'string') return Promise.resolve();
+
   if (!this._sessions[transactionId]) {
-    this._sessions[transactionId] = this._mongoClient.startSession();
-    this._sessions[transactionId].startTransaction();
     this._transactionOpLinks[transactionId] = [];
+    this._sessions[transactionId] = this._getTransactionClient(transactionId).then(function(client) {
+      var session = client.startSession();
+      session.startTransaction();
+      return session;
+    });
   }
+
   return this._sessions[transactionId];
 };
 
@@ -273,25 +306,27 @@ ShareDbMongo.prototype._writeOp = function(collectionName, id, op, snapshot, opt
     return callback(err);
   }
   var self = this;
-  this.getOpCollection(collectionName, function(err, opCollection) {
+  this.getOpCollection(collectionName, options, function(err, opCollection) {
     if (err) return callback(err);
     var doc = shallowClone(op);
     doc.d = id;
     var transactionLinks = self._transactionOpLinks[options.transaction] || [];
     doc.o = transactionLinks[op.v - 1] || snapshot._opLink;
-    var session = self._ensureTransactionStarted(options.transaction);
-    opCollection.insertOne(doc, {session: session})
-      .then(function(result) {
-        if (options.transaction) {
-          self._transactionOpLinks[options.transaction][op.v] = result.insertedId;
-        }
-        callback(null, result);
-      }, callback);
+    // TODO: Rewrite as async/await (supported since Node.js v7.6.0)
+    self._ensureTransactionStarted(options.transaction).then(function(session) {
+      opCollection.insertOne(doc, {session: session})
+        .then(function(result) {
+          if (options.transaction) {
+            self._transactionOpLinks[options.transaction][op.v] = result.insertedId;
+          }
+          callback(null, result);
+        }, callback);
+    }, callback);
   });
 };
 
 ShareDbMongo.prototype._deleteOp = function(collectionName, opId, callback) {
-  this.getOpCollection(collectionName, function(err, opCollection) {
+  this.getOpCollection(collectionName, {}, function(err, opCollection) {
     if (err) return callback(err);
     opCollection.deleteOne({_id: opId})
       .then(function(result) {
@@ -302,43 +337,47 @@ ShareDbMongo.prototype._deleteOp = function(collectionName, opId, callback) {
 
 ShareDbMongo.prototype._writeSnapshot = function(request, id, snapshot, opId, options, callback) {
   var self = this;
-  this.getCollection(request.collectionName, function(err, collection) {
+  this.getCollection(request.collectionName, options, function(err, collection) {
     if (err) return callback(err);
     request.documentToWrite = castToDoc(id, snapshot, opId);
-    var session = self._ensureTransactionStarted(options.transaction);
-    if (request.documentToWrite._v === 1) {
-      self._middleware.trigger(MiddlewareHandler.Actions.beforeCreate, request, function(middlewareErr) {
-        if (middlewareErr) {
-          return callback(middlewareErr);
-        }
-        collection.insertOne(request.documentToWrite, {session: session})
-          .then(
-            function() {
-              callback(null, true);
-            },
-            function(err) {
+    self._ensureTransactionStarted(options.transaction).then(function(session) {
+      console.log('session?', !!session);
+      if (request.documentToWrite._v === 1) {
+        self._middleware.trigger(MiddlewareHandler.Actions.beforeCreate, request, function(middlewareErr) {
+          if (middlewareErr) {
+            return callback(middlewareErr);
+          }
+          collection.insertOne(request.documentToWrite, {session: session})
+            .then(
+              function() {
+                callback(null, true);
+              },
+              function(err) {
               // Return non-success instead of duplicate key error, since this is
               // expected to occur during simultaneous creates on the same id
-              if (err.code === 11000 && /\b_id_\b/.test(err.message)) {
-                return callback(null, false);
+                if (err.code === 11000 && /\b_id_\b/.test(err.message)) {
+                  return callback(null, false);
+                }
+                return callback(err);
               }
-              return callback(err);
-            }
-          );
-      });
-    } else {
-      request.query = {_id: id, _v: request.documentToWrite._v - 1};
-      self._middleware.trigger(MiddlewareHandler.Actions.beforeOverwrite, request, function(middlewareErr) {
-        if (middlewareErr) {
-          return callback(middlewareErr);
-        }
-        collection.replaceOne(request.query, request.documentToWrite, {session: session})
-          .then(function(result) {
-            var succeeded = !!result.modifiedCount;
-            callback(null, succeeded);
-          }, callback);
-      });
-    }
+            );
+        });
+      } else {
+        request.query = {_id: id, _v: request.documentToWrite._v - 1};
+        console.log('query', request.query);
+        console.log('to write', request.documentToWrite);
+        self._middleware.trigger(MiddlewareHandler.Actions.beforeOverwrite, request, function(middlewareErr) {
+          if (middlewareErr) {
+            return callback(middlewareErr);
+          }
+          collection.replaceOne(request.query, request.documentToWrite, {session: session})
+            .then(function(result) {
+              var succeeded = !!result.modifiedCount;
+              callback(null, succeeded);
+            }, callback);
+        });
+      }
+    }, callback);
   });
 };
 
@@ -347,7 +386,7 @@ ShareDbMongo.prototype._writeSnapshot = function(request, id, snapshot, opId, op
 
 ShareDbMongo.prototype.getSnapshot = function(collectionName, id, fields, options, callback) {
   var self = this;
-  this.getCollection(collectionName, function(err, collection) {
+  this.getCollection(collectionName, options, function(err, collection) {
     if (err) return callback(err);
     var query = {_id: id};
     var projection = getProjection(fields, options);
@@ -367,7 +406,7 @@ ShareDbMongo.prototype.getSnapshot = function(collectionName, id, fields, option
 
 ShareDbMongo.prototype.getSnapshotBulk = function(collectionName, ids, fields, options, callback) {
   var self = this;
-  this.getCollection(collectionName, function(err, collection) {
+  this.getCollection(collectionName, options, function(err, collection) {
     if (err) return callback(err);
     var query = {_id: {$in: ids}};
     var projection = getProjection(fields, options);
@@ -414,9 +453,9 @@ ShareDbMongo.prototype.validateCollectionName = function(collectionName) {
 };
 
 // Get and return the op collection from mongo, ensuring it has the op index.
-ShareDbMongo.prototype.getOpCollection = function(collectionName, callback) {
+ShareDbMongo.prototype.getOpCollection = function(collectionName, options, callback) {
   var self = this;
-  this.getDbs(function(err, mongo) {
+  this.getDbs(options, function(err, mongo) {
     if (err) return callback(err);
     var name = self.getOplogCollectionName(collectionName);
     var collection = mongo.collection(name);
@@ -548,7 +587,7 @@ ShareDbMongo.prototype.getOpsBulk = function(collectionName, fromMap, toMap, opt
 
 ShareDbMongo.prototype.getCommittedOpVersion = function(collectionName, id, snapshot, op, options, callback) {
   var self = this;
-  this.getOpCollection(collectionName, function(err, opCollection) {
+  this.getOpCollection(collectionName, {}, function(err, opCollection) {
     if (err) return callback(err);
     var query = {
       src: op.src,
@@ -685,7 +724,7 @@ function getOpsQuery(id, from, to) {
 }
 
 ShareDbMongo.prototype._getOps = function(collectionName, id, from, to, options, callback) {
-  this.getOpCollection(collectionName, function(err, opCollection) {
+  this.getOpCollection(collectionName, options, function(err, opCollection) {
     if (err) return callback(err);
     var query = getOpsQuery(id, from, to);
     // Exclude the `d` field, which is only for use internal to livedb-mongo.
@@ -701,7 +740,7 @@ ShareDbMongo.prototype._getOps = function(collectionName, id, from, to, options,
 };
 
 ShareDbMongo.prototype._getOpsBulk = function(collectionName, conditions, options, callback) {
-  this.getOpCollection(collectionName, function(err, opCollection) {
+  this.getOpCollection(collectionName, options, function(err, opCollection) {
     if (err) return callback(err);
     var query = {$or: conditions};
     // Exclude the `m` field, which can be used to store metadata on ops for
@@ -745,7 +784,7 @@ ShareDbMongo.prototype._getOpLink = function(collectionName, id, to, options, ca
   if (!this.getOpsWithoutStrictLinking) return this._getSnapshotOpLink(collectionName, id, options, callback);
 
   var db = this;
-  this.getOpCollection(collectionName, function(error, collection) {
+  this.getOpCollection(collectionName, options, function(error, collection) {
     if (error) return callback(error);
 
     // If to is null, we want the most recent version, so just return the
@@ -816,7 +855,7 @@ function closeCursor(cursor, callback, error, returnValue) {
 
 ShareDbMongo.prototype._getSnapshotOpLink = function(collectionName, id, options, callback) {
   var self = this;
-  this.getCollection(collectionName, function(err, collection) {
+  this.getCollection(collectionName, options, function(err, collection) {
     if (err) return callback(err);
     var query = {_id: id};
     var projection = {_id: 0, _o: 1, _v: 1};
@@ -835,7 +874,7 @@ ShareDbMongo.prototype._getSnapshotOpLink = function(collectionName, id, options
 
 ShareDbMongo.prototype._getSnapshotOpLinkBulk = function(collectionName, ids, options, callback) {
   var self = this;
-  this.getCollection(collectionName, function(err, collection) {
+  this.getCollection(collectionName, options, function(err, collection) {
     if (err) return callback(err);
     var query = {_id: {$in: ids}};
     var projection = {_o: 1, _v: 1};
@@ -917,7 +956,7 @@ ShareDbMongo.prototype._query = function(collection, inputQuery, projection, cal
 
 ShareDbMongo.prototype.query = function(collectionName, inputQuery, fields, options, callback) {
   var self = this;
-  this.getCollection(collectionName, function(err, collection) {
+  this.getCollection(collectionName, options, function(err, collection) {
     if (err) return callback(err);
     var projection = getProjection(fields, options);
     self._query(collection, inputQuery, projection, function(err, results, extra) {
