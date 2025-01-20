@@ -74,6 +74,9 @@ function ShareDbMongo(mongo, options) {
   }
 
   this._middleware = new MiddlewareHandler();
+
+  this._sessions = Object.create(null);
+  this._transactionOpLinks = Object.create(null);
 };
 
 ShareDbMongo.prototype = Object.create(DB.prototype);
@@ -203,12 +206,14 @@ ShareDbMongo.prototype.close = function(callback) {
 // **** Commit methods
 
 ShareDbMongo.prototype.commit = function(collectionName, id, op, snapshot, options, callback) {
+  options = options || {};
   var self = this;
   var request = createRequestForMiddleware(options, collectionName, op);
-  this._writeOp(collectionName, id, op, snapshot, function(err, result) {
+  // TODO: Wrap callback to abort transaction on error and tidy up session in .finally()
+  this._writeOp(collectionName, id, op, snapshot, options, function(err, result) {
     if (err) return callback(err);
     var opId = result.insertedId;
-    self._writeSnapshot(request, id, snapshot, opId, function(err, succeeded) {
+    self._writeSnapshot(request, id, snapshot, opId, options, function(err, succeeded) {
       if (succeeded) return callback(err, succeeded);
       // Cleanup unsuccessful op if snapshot write failed. This is not
       // necessary for data correctness, but it gets rid of clutter
@@ -217,6 +222,32 @@ ShareDbMongo.prototype.commit = function(collectionName, id, op, snapshot, optio
       });
     });
   });
+};
+
+ShareDbMongo.prototype.commitTransaction = function(transactionId, callback) {
+  if (!this._sessions[transactionId]) return callback();
+  this._sessions[transactionId].commitTransaction()
+    .then(function() {
+      callback();
+    }, callback);
+};
+
+ShareDbMongo.prototype.abortTransaction = function(transactionId, callback) {
+  if (!this._sessions[transactionId]) return callback();
+  this._sessions[transactionId].abortTransaction()
+    .then(function() {
+      callback();
+    }, callback);
+};
+
+ShareDbMongo.prototype._ensureTransactionStarted = function(transactionId) {
+  if (typeof transactionId !== 'string') return null;
+  if (!this._sessions[transactionId]) {
+    this._sessions[transactionId] = this._mongoClient.startSession();
+    this._sessions[transactionId].startTransaction();
+    this._transactionOpLinks[transactionId] = [];
+  }
+  return this._sessions[transactionId];
 };
 
 function createRequestForMiddleware(options, collectionName, op, fields) {
@@ -236,18 +267,24 @@ function createRequestForMiddleware(options, collectionName, op, fields) {
   return request;
 }
 
-ShareDbMongo.prototype._writeOp = function(collectionName, id, op, snapshot, callback) {
+ShareDbMongo.prototype._writeOp = function(collectionName, id, op, snapshot, options, callback) {
   if (typeof op.v !== 'number') {
     var err = ShareDbMongo.invalidOpVersionError(collectionName, id, op.v);
     return callback(err);
   }
+  var self = this;
   this.getOpCollection(collectionName, function(err, opCollection) {
     if (err) return callback(err);
     var doc = shallowClone(op);
     doc.d = id;
-    doc.o = snapshot._opLink;
-    opCollection.insertOne(doc)
+    var transactionLinks = self._transactionOpLinks[options.transaction] || [];
+    doc.o = transactionLinks[op.v - 1] || snapshot._opLink;
+    var session = self._ensureTransactionStarted(options.transaction);
+    opCollection.insertOne(doc, {session: session})
       .then(function(result) {
+        if (options.transaction) {
+          self._transactionOpLinks[options.transaction][op.v] = result.insertedId;
+        }
         callback(null, result);
       }, callback);
   });
@@ -263,17 +300,18 @@ ShareDbMongo.prototype._deleteOp = function(collectionName, opId, callback) {
   });
 };
 
-ShareDbMongo.prototype._writeSnapshot = function(request, id, snapshot, opId, callback) {
+ShareDbMongo.prototype._writeSnapshot = function(request, id, snapshot, opId, options, callback) {
   var self = this;
   this.getCollection(request.collectionName, function(err, collection) {
     if (err) return callback(err);
     request.documentToWrite = castToDoc(id, snapshot, opId);
+    var session = self._ensureTransactionStarted(options.transaction);
     if (request.documentToWrite._v === 1) {
       self._middleware.trigger(MiddlewareHandler.Actions.beforeCreate, request, function(middlewareErr) {
         if (middlewareErr) {
           return callback(middlewareErr);
         }
-        collection.insertOne(request.documentToWrite)
+        collection.insertOne(request.documentToWrite, {session: session})
           .then(
             function() {
               callback(null, true);
@@ -294,7 +332,7 @@ ShareDbMongo.prototype._writeSnapshot = function(request, id, snapshot, opId, ca
         if (middlewareErr) {
           return callback(middlewareErr);
         }
-        collection.replaceOne(request.query, request.documentToWrite)
+        collection.replaceOne(request.query, request.documentToWrite, {session: session})
           .then(function(result) {
             var succeeded = !!result.modifiedCount;
             callback(null, succeeded);
