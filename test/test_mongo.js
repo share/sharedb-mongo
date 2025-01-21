@@ -18,7 +18,7 @@ function create(callback) {
   });
 };
 
-require('sharedb/test/db')({create: create, getQuery: getQuery});
+require('sharedb/test/db')({create: create, getQuery: getQuery, transactions: true});
 
 describe('mongo db', function() {
   beforeEach(function(done) {
