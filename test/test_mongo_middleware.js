@@ -71,7 +71,10 @@ describe('mongo db middleware', function() {
 
   describe(BEFORE_EDIT, function() {
     it('has the expected properties on the request object', function(done) {
+      var middlewareEntranceCount = 0;
+
       db.use(BEFORE_EDIT, function(request, next) {
+        middlewareEntranceCount = middlewareEntranceCount + 1;
         expect(request).to.have.all.keys([
           'action',
           'collectionName',
@@ -87,7 +90,6 @@ describe('mongo db middleware', function() {
         expect(request.options.testOptions).to.equal('yes');
         expect(request.query._id).to.equal('test1');
         next();
-        done();
       });
 
       var snapshot = {type: 'json0', id: 'test1', v: 1, data: {foo: 'bar'}};
@@ -98,6 +100,9 @@ describe('mongo db middleware', function() {
         if (err) return done(err);
         db.commit('testcollection', snapshot.id, editOp, newSnapshot, {testOptions: 'yes'}, function(err) {
           if (err) return done(err);
+
+          expect(middlewareEntranceCount).to.equal(1);
+          done();
         });
       });
     });
@@ -221,7 +226,10 @@ describe('mongo db middleware', function() {
 
   describe(BEFORE_SNAPSHOT_LOOKUP, function() {
     it('has the expected properties on the request object before getting a single snapshot', function(done) {
+      var middlewareEntranceCount = 0;
+
       db.use(BEFORE_SNAPSHOT_LOOKUP, function(request, next) {
+        middlewareEntranceCount = middlewareEntranceCount + 1;
         expect(request).to.have.all.keys([
           'action',
           'collectionName',
@@ -233,7 +241,6 @@ describe('mongo db middleware', function() {
         expect(request.options.testOptions).to.equal('yes');
         expect(request.query._id).to.equal('test1');
         next();
-        done();
       });
 
       var snapshot = {type: 'json0', id: 'test1', v: 1, data: {foo: 'bar'}};
@@ -242,6 +249,8 @@ describe('mongo db middleware', function() {
         db.getSnapshot('testcollection', 'test1', null, {testOptions: 'yes'}, function(err, doc) {
           if (err) return done(err);
           expect(doc).to.exist;
+          expect(middlewareEntranceCount).to.equal(1);
+          done();
         });
       });
     });
@@ -356,7 +365,9 @@ describe('mongo db middleware', function() {
     });
 
     it('has the expected properties on the request object before getting bulk snapshots', function(done) {
+      var middlewareEntranceCount = 0;
       db.use(BEFORE_SNAPSHOT_LOOKUP, function(request, next) {
+        middlewareEntranceCount = middlewareEntranceCount + 1;
         expect(request).to.have.all.keys([
           'action',
           'collectionName',
@@ -368,7 +379,6 @@ describe('mongo db middleware', function() {
         expect(request.options.testOptions).to.equal('yes');
         expect(request.query._id).to.deep.equal({$in: ['test1']});
         next();
-        done();
       });
 
       var snapshot = {type: 'json0', id: 'test1', v: 1, data: {foo: 'bar'}};
@@ -377,6 +387,8 @@ describe('mongo db middleware', function() {
         db.getSnapshotBulk('testcollection', ['test1'], null, {testOptions: 'yes'}, function(err, doc) {
           if (err) return done(err);
           expect(doc).to.exist;
+          expect(middlewareEntranceCount).to.equal(1);
+          done();
         });
       });
     });
