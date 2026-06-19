@@ -1,5 +1,5 @@
 --reporter spec
 --check-leaks
---globals Promise
+--globals Promise,allowedDriverRequire
 --timeout 18000
 --file test/setup.js
