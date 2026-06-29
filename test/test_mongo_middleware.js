@@ -1,7 +1,7 @@
 var async = require('async');
 var sinon = require('sinon');
 var chai = require('chai');
-chai.use(require('sinon-chai'));
+chai.use(require('sinon-chai').default);
 var expect = chai.expect;
 var ShareDbMongo = require('..');
 var mongodb = require('./../mongodb');
