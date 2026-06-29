@@ -24,7 +24,7 @@
     "ot-json1": "^1.0.1",
     "rich-text": "^4.1.0",
     "sharedb-mingo-memory": "^1.0.0 || ^2.0.0 || ^3.0.0",
-    "sinon": "^9.2.4",
+    "sinon": "^22.0.0",
     "sinon-chai": "^3.7.0"
   },
   "scripts": {
