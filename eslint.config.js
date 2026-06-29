@@ -1,3 +1,9 @@
+'use strict';
+
+const {FlatCompat} = require('@eslint/eslintrc');
+
+const compat = new FlatCompat({baseDirectory: __dirname});
+
 // The ESLint ecmaVersion argument is inconsistently used. Some rules will ignore it entirely, so if the rule has
 // been set, it will still error even if it's not applicable to that version number. Since Google sets these
 // rules, we have to turn them off ourselves.
@@ -21,7 +27,7 @@ const SHAREDB_RULES = {
     {
       code: 120,
       tabWidth: 2,
-      ignoreUrls: true,
+      ignoreUrls: true
     }
   ],
   // Google overrides the default ESLint behaviour here, which is slightly better for catching erroneously unused variables
@@ -36,14 +42,23 @@ const SHAREDB_RULES = {
   'valid-jsdoc': 'off'
 };
 
-module.exports = {
-  extends: 'google',
-  parserOptions: {
-    ecmaVersion: 3
+module.exports = [
+  {
+    ignores: ['coverage/', 'eslint.config.js']
   },
-  rules: Object.assign(
-    {},
-    DISABLED_ES6_OPTIONS,
-    SHAREDB_RULES
-  ),
-};
+  ...compat.extends('google'),
+  {
+    // The source targets ES3/ES5 (no ES6 syntax), but the parser is set to ES5 because some code accesses reserved
+    // words as property names (e.g. Promise `.catch()`), which is only valid from ES5 onwards. ES3-incompatible
+    // constructs (trailing commas, spread, etc.) are still caught by the explicit rules below.
+    languageOptions: {
+      ecmaVersion: 5,
+      sourceType: 'script'
+    },
+    rules: Object.assign(
+      {},
+      DISABLED_ES6_OPTIONS,
+      SHAREDB_RULES
+    )
+  }
+];
