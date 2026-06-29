@@ -8,10 +8,11 @@
     "sharedb": "^1.9.1 || ^2.0.0 || ^3.0.0 || ^4.0.0 || ^5.0.0 || ^6.0.0"
   },
   "devDependencies": {
+    "@eslint/eslintrc": "^3.3.5",
     "async": "^3.2.4",
     "chai": "^4.2.0",
     "coveralls": "^3.0.7",
-    "eslint": "^5.16.0",
+    "eslint": "^10.5.0",
     "eslint-config-google": "^0.13.0",
     "mocha": "^11.7.6",
     "mongodb3": "npm:mongodb@^3.0.0",
@@ -27,7 +28,7 @@
     "sinon-chai": "^3.7.0"
   },
   "scripts": {
-    "lint": "./node_modules/.bin/eslint --ignore-path .gitignore '**/*.js'",
+    "lint": "./node_modules/.bin/eslint .",
     "lint:fix": "npm run lint -- --fix",
     "test": "mocha",
     "test:mongodb3": "_SHAREDB_MONGODB_DRIVER=mongodb3 npm test",
