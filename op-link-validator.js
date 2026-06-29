@@ -58,9 +58,9 @@ OpLinkValidator.prototype.isAtEndOfList = function() {
 OpLinkValidator.prototype._previousVersionWasUnique = function() {
   var previousVersion = this._previousVersion();
 
-  return typeof previousVersion === 'number'
-    && previousVersion !== this._currentVersion()
-    && previousVersion !== this._oneBeforePreviousVersion();
+  return typeof previousVersion === 'number' &&
+    previousVersion !== this._currentVersion() &&
+    previousVersion !== this._oneBeforePreviousVersion();
 };
 
 OpLinkValidator.prototype._currentVersion = function() {
