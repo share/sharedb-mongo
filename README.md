@@ -1,8 +1,8 @@
 # sharedb-mongo
 
 [![NPM Version](https://img.shields.io/npm/v/sharedb-mongo.svg)](https://npmjs.org/package/sharedb-mongo)
-[![Test](https://github.com/share/sharedb-mongo/workflows/Test/badge.svg)](https://github.com/share/sharedb-mongo/actions/workflows/test.yml)
-[![Coverage Status](https://coveralls.io/repos/github/share/sharedb-mongo/badge.svg?branch=master)](https://coveralls.io/github/share/sharedb-mongo?branch=master)
+[![Test](https://github.com/share/sharedb-mongo/actions/workflows/test.yml/badge.svg)](https://github.com/share/sharedb-mongo/actions/workflows/test.yml)
+[![Coverage Status](https://coveralls.io/repos/github/share/sharedb-mongo/badge.svg?branch=main)](https://coveralls.io/github/share/sharedb-mongo?branch=main)
 
 MongoDB database adapter for [sharedb](https://github.com/share/sharedb). This
 driver can be used both as a snapshot store and oplog.
