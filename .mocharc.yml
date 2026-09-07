@@ -1,0 +1,6 @@
+reporter: spec
+check-leaks: true
+timeout: 18000
+file: test/setup.js
+globals:
+- allowedDriverRequire # Leaked by the mongodb driver
