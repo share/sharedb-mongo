@@ -340,7 +340,7 @@ ShareDbMongo.prototype.getSnapshotBulk = function(collectionName, ids, fields, o
 
       collection.find(request.query, request.findOptions).project(projection).toArray()
         .then(function(docs) {
-          var snapshotMap = {};
+          var snapshotMap = Object.create(null);
           for (var i = 0; i < docs.length; i++) {
             var snapshot = castToSnapshot(docs[i]);
             snapshotMap[snapshot.id] = snapshot;
@@ -470,7 +470,7 @@ ShareDbMongo.prototype.getOpsBulk = function(collectionName, fromMap, toMap, opt
     // Add empty array for snapshot versions that are up to date and create
     // the query conditions for ops that we need to get
     var conditions = [];
-    var opsMap = {};
+    var opsMap = Object.create(null);
     for (var i = 0; i < ids.length; i++) {
       var id = ids[i];
       var doc = docMap[id];
@@ -563,7 +563,7 @@ function isCurrentVersion(doc, version) {
 }
 
 function getDocMap(docs) {
-  var docMap = {};
+  var docMap = Object.create(null);
   for (var i = 0; i < docs.length; i++) {
     var doc = docs[i];
     docMap[doc._id] = doc;
@@ -675,7 +675,7 @@ ShareDbMongo.prototype._getOpsBulk = function(collectionName, conditions, option
 };
 
 function readOpsBulk(stream, callback) {
-  var opsMap = {};
+  var opsMap = Object.create(null);
   var errored;
   stream.on('error', function(err) {
     errored = true;

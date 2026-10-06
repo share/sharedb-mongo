@@ -431,6 +431,41 @@ describe('mongo db', function() {
       });
     });
   });
+
+  describe('ids that name Object.prototype properties', function() {
+    it('getSnapshotBulk returns v0 snapshots for missing docs', function(done) {
+      this.db.getSnapshotBulk('testcollection', ['__proto__', 'constructor'], null, null, function(err, snapshotMap) {
+        if (err) return done(err);
+        expect(snapshotMap).to.have.own.property('__proto__').that.includes({id: '__proto__', v: 0});
+        expect(snapshotMap).to.have.own.property('constructor').that.includes({id: 'constructor', v: 0});
+        done();
+      });
+    });
+
+    it('getOpsBulk returns no ops for missing docs', function(done) {
+      var fromMap = JSON.parse('{"__proto__": 0, "constructor": 0}');
+      this.db.getOpsBulk('testcollection', fromMap, null, null, function(err, opsMap) {
+        if (err) return done(err);
+        expect(opsMap).to.have.own.property('__proto__').that.eql([]);
+        expect(opsMap).to.have.own.property('constructor').that.eql([]);
+        done();
+      });
+    });
+
+    it('getOpsBulk returns committed ops', function(done) {
+      var db = this.db;
+      var fromMap = JSON.parse('{"__proto__": 0}');
+      var snapshot = {type: 'json0', v: 1, data: {}};
+      db.commit('testcollection', '__proto__', {v: 0, create: {}}, snapshot, null, function(err) {
+        if (err) return done(err);
+        db.getOpsBulk('testcollection', fromMap, null, null, function(err, opsMap) {
+          if (err) return done(err);
+          expect(opsMap).to.have.own.property('__proto__').that.has.lengthOf(1);
+          done();
+        });
+      });
+    });
+  });
 });
 
 describe('options', function() {
