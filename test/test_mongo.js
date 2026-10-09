@@ -1,4 +1,5 @@
 var expect = require('chai').expect;
+var sinon = require('sinon');
 var ShareDbMongo = require('..');
 var getQuery = require('sharedb-mingo-memory/get-query');
 var async = require('async');
@@ -430,6 +431,17 @@ describe('mongo db', function() {
         });
       });
     });
+
+    it('$mapReduce queries return an error when the driver has no mapReduce', function(done) {
+      if (typeof this.db.mongo.collection('test').mapReduce === 'function') {
+        return done();
+      }
+      this.db.allowJSQueries = true;
+      this.db.query('testcollection', {$mapReduce: {}}, null, null, function(err) {
+        expect(err.code).to.equal(4104);
+        done();
+      });
+    });
   });
 
   describe('ids that name Object.prototype properties', function() {
@@ -452,6 +464,15 @@ describe('mongo db', function() {
       });
     });
 
+    it('getOpsBulk ignores prototype properties of a partial toMap', function(done) {
+      var fromMap = JSON.parse('{"constructor": 0}');
+      this.db.getOpsBulk('testcollection', fromMap, {other: 1}, null, function(err, opsMap) {
+        if (err) return done(err);
+        expect(opsMap).to.have.own.property('constructor').that.eql([]);
+        done();
+      });
+    });
+
     it('getOpsBulk returns committed ops', function(done) {
       var db = this.db;
       var fromMap = JSON.parse('{"__proto__": 0}');
@@ -464,6 +485,195 @@ describe('mongo db', function() {
           done();
         });
       });
+    });
+  });
+
+  describe('invalid collection names', function() {
+    var sandbox = sinon.createSandbox();
+
+    afterEach(function() {
+      sandbox.restore();
+    });
+
+    it('rejects a missing collection name', function(done) {
+      this.db.getSnapshot(undefined, 'foo', null, null, function(err) {
+        expect(err).to.include({code: 4102});
+        done();
+      });
+    });
+
+    it('rejects a non-string collection name when polling', function(done) {
+      var collectionName = {};
+      this.db.queryPoll(collectionName, {}, null, function(err) {
+        expect(err).to.include({code: 4102});
+        done();
+      });
+    });
+
+    it('rejects a missing collection name for ops', function(done) {
+      this.db.getOpCollection(undefined, function(err) {
+        expect(err).to.include({code: 4102});
+        done();
+      });
+    });
+
+    describe('when mongo rejects the name', function() {
+      var error = new Error('Invalid collection name');
+
+      beforeEach(function() {
+        sandbox.stub(this.mongo, 'collection').throws(error);
+      });
+
+      it('getCollection calls back with the error', function(done) {
+        this.db.getCollection('testcollection', function(err) {
+          expect(err).to.equal(error);
+          done();
+        });
+      });
+
+      it('getCollectionPoll calls back with the error', function(done) {
+        this.db.getCollectionPoll('testcollection', function(err) {
+          expect(err).to.equal(error);
+          done();
+        });
+      });
+
+      it('getOpCollection calls back with the error', function(done) {
+        this.db.getOpCollection('testcollection', function(err) {
+          expect(err).to.equal(error);
+          done();
+        });
+      });
+    });
+  });
+
+  describe('malformed queries', function() {
+    beforeEach(function(done) {
+      var snapshot = {type: 'json0', v: 1, data: {x: 1}};
+      this.db.commit('testcollection', 'foo', {v: 0, create: {}}, snapshot, null, done);
+    });
+
+    [
+      {query: null, code: 5104},
+      {query: {$and: [null]}, code: 5104},
+      {query: {$readPref: null}, code: 4107},
+      {query: {$distinct: null}, code: 4107},
+      {query: {$map: true}, code: 4107},
+      {query: {$mapReduce: null}, code: 4107},
+      {query: {$and: true}, code: 4107},
+      {query: {$or: {}}, code: 4107}
+    ].forEach(function(testCase) {
+      it('query calls back with ' + testCase.code + ' for ' + JSON.stringify(testCase.query), function(done) {
+        this.db.query('testcollection', testCase.query, null, null, function(err) {
+          expect(err.code).to.equal(testCase.code);
+          done();
+        });
+      });
+    });
+
+    it('query calls back with the driver error for a non-integer $limit', function(done) {
+      this.db.query('testcollection', {$limit: 'x'}, null, null, function(err) {
+        expect(err.message).to.match(/requires an integer/);
+        done();
+      });
+    });
+
+    it('queryPollDoc calls back with 5104 for a null query', function(done) {
+      this.db.queryPollDoc('testcollection', 'foo', null, null, function(err) {
+        expect(err.code).to.equal(5104);
+        done();
+      });
+    });
+
+    it('queryPollDoc calls back with 4107 for a non-array $and', function(done) {
+      var query = {_id: {$gt: ''}, $and: {}};
+      this.db.queryPollDoc('testcollection', 'foo', query, null, function(err) {
+        expect(err.code).to.equal(4107);
+        done();
+      });
+    });
+
+    it('canPollDoc returns false for a null query', function() {
+      expect(this.db.canPollDoc('testcollection', null)).to.equal(false);
+    });
+
+    it('canPollDoc handles a query with a hasOwnProperty field', function() {
+      expect(this.db.canPollDoc('testcollection', {hasOwnProperty: 1})).to.equal(true);
+    });
+  });
+
+  it('calls back with an error when a snapshot has a top-level $ key', function(done) {
+    var db = this.db;
+    var snapshot = {type: 'json0', v: 1, data: {}};
+    db.commit('testcollection', 'foo', {v: 0, create: {}}, snapshot, null, function(err) {
+      if (err) return done(err);
+      var op = {v: 1, op: [{p: ['$set'], oi: 1}]};
+      var updated = {type: 'json0', v: 2, data: {$set: 1}};
+      db.commit('testcollection', 'foo', op, updated, null, function(err) {
+        expect(err.message).to.match(/must not contain atomic operators/);
+        done();
+      });
+    });
+  });
+
+  it('fetches a doc with a top-level hasOwnProperty field', function(done) {
+    var db = this.db;
+    var snapshot = {type: 'json0', v: 1, data: {hasOwnProperty: 1}};
+    db.commit('testcollection', 'foo', {v: 0, create: {}}, snapshot, null, function(err) {
+      if (err) return done(err);
+      db.getSnapshot('testcollection', 'foo', null, null, function(err, result) {
+        if (err) return done(err);
+        expect(result.data).to.eql({hasOwnProperty: 1});
+        done();
+      });
+    });
+  });
+
+  it('queries a nested hasOwnProperty field', function(done) {
+    var db = this.db;
+    var snapshot = {type: 'json0', v: 1, data: {hasOwnProperty: 1}};
+    db.commit('testcollection', 'foo', {v: 0, create: {}}, snapshot, null, function(err) {
+      if (err) return done(err);
+      db.query('testcollection', {$or: [{hasOwnProperty: 1}]}, null, null, function(err, results) {
+        if (err) return done(err);
+        expect(results).to.have.length(1);
+        done();
+      });
+    });
+  });
+
+  it('getSnapshotBulk calls back with an error for an id that is not a primitive', function(done) {
+    this.db.getSnapshotBulk('testcollection', [{toString: 1}], null, null, function(err) {
+      expect(err).to.be.an.instanceof(TypeError);
+      done();
+    });
+  });
+
+  it('getOps calls back with 4101 for a non-numeric from', function(done) {
+    this.db.getOps('testcollection', 'foo', {}, null, null, function(err) {
+      expect(err.code).to.equal(4101);
+      done();
+    });
+  });
+
+  it('getOps calls back with 4101 for a non-numeric to', function(done) {
+    this.db.getOps('testcollection', 'foo', 0, {}, null, function(err) {
+      expect(err.code).to.equal(4101);
+      done();
+    });
+  });
+
+  it('getOpsBulk calls back with 4101 for a non-numeric from', function(done) {
+    this.db.getOpsBulk('testcollection', {foo: {}}, null, null, function(err) {
+      expect(err.code).to.equal(4101);
+      done();
+    });
+  });
+
+  it('getOpsToSnapshot calls back with 4101 for a non-numeric from', function(done) {
+    this.db.getOpsToSnapshot('testcollection', 'foo', {}, {_opLink: 'x'}, null, function(err) {
+      expect(err.code).to.equal(4101);
+      done();
     });
   });
 });
