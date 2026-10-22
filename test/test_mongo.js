@@ -676,6 +676,92 @@ describe('mongo db', function() {
       done();
     });
   });
+
+  describe('getCommittedOpVersion', function() {
+    var sandbox = sinon.createSandbox();
+
+    beforeEach(function(done) {
+      var self = this;
+      var db = this.db;
+      var create = {v: 0, create: {}, src: 'xyz', seq: 1};
+      var edit = {v: 1, op: [], src: 'abc', seq: 1};
+      async.waterfall([
+        db.commit.bind(db, 'testcollection', 'foo', create, {type: 'json0', v: 1, data: {}}, null),
+        function(succeeded, next) {
+          db.getSnapshot('testcollection', 'foo', {$submit: true}, null, next);
+        },
+        function(snapshot, next) {
+          snapshot.v = 2;
+          db.commit('testcollection', 'foo', edit, snapshot, null, next);
+        },
+        function(succeeded, next) {
+          db.getSnapshot('testcollection', 'foo', {$submit: true}, null, next);
+        },
+        function(snapshot, next) {
+          self.snapshot = snapshot;
+          sandbox.spy(db, 'getOpsToSnapshot');
+          next();
+        }
+      ], done);
+    });
+
+    afterEach(function() {
+      sandbox.restore();
+    });
+
+    function insertUnlinkedOp(mongo, op) {
+      return mongo.collection('o_testcollection').insertOne(Object.assign({d: 'foo', o: null}, op));
+    }
+
+    it('returns the version of a committed op, reading ops only from that version', function(done) {
+      var db = this.db;
+      var op = {src: 'abc', seq: 1};
+      db.getCommittedOpVersion('testcollection', 'foo', this.snapshot, op, null, function(err, version) {
+        if (err) return done(err);
+        expect(version).to.equal(1);
+        expect(db.getOpsToSnapshot.calledOnceWith('testcollection', 'foo', 1)).to.equal(true);
+        done();
+      });
+    });
+
+    it('returns no version without reading ops for an op that was never written', function(done) {
+      var db = this.db;
+      var op = {src: 'abc', seq: 2};
+      db.getCommittedOpVersion('testcollection', 'foo', this.snapshot, op, null, function(err, version) {
+        if (err) return done(err);
+        expect(version).not.to.exist;
+        expect(db.getOpsToSnapshot.notCalled).to.equal(true);
+        done();
+      });
+    });
+
+    it('returns no version for a written op that the snapshot does not link to', function(done) {
+      var db = this.db;
+      var snapshot = this.snapshot;
+      var op = {src: 'def', seq: 1};
+      insertUnlinkedOp(this.mongo, {v: 1, op: [], src: 'def', seq: 1}).then(function() {
+        db.getCommittedOpVersion('testcollection', 'foo', snapshot, op, null, function(err, version) {
+          if (err) return done(err);
+          expect(version).not.to.exist;
+          expect(db.getOpsToSnapshot.calledOnce).to.equal(true);
+          done();
+        });
+      }, done);
+    });
+
+    it('returns the committed version of an op that was written again later', function(done) {
+      var db = this.db;
+      var snapshot = this.snapshot;
+      var op = {src: 'abc', seq: 1};
+      insertUnlinkedOp(this.mongo, {v: 2, op: [], src: 'abc', seq: 1}).then(function() {
+        db.getCommittedOpVersion('testcollection', 'foo', snapshot, op, null, function(err, version) {
+          if (err) return done(err);
+          expect(version).to.equal(1);
+          done();
+        });
+      }, done);
+    });
+  });
 });
 
 describe('options', function() {
