@@ -856,9 +856,12 @@ ShareDbMongo.prototype._getSnapshotOpLinkBulk = function(collectionName, ids, op
 
 // **** Query methods
 
-ShareDbMongo.prototype._query = function(collection, inputQuery, projection, callback) {
+ShareDbMongo.prototype._query = function(collection, inputQuery, fields, projection, callback) {
   var parsed = this._getSafeParsedQuery(inputQuery, callback);
   if (!parsed) return;
+
+  var projectedFieldsErr = checkCollectionOperationFields(parsed, fields);
+  if (projectedFieldsErr) return callback(projectedFieldsErr);
 
   try {
     var queryResult = runParsedQuery(collection, parsed, projection);
@@ -919,12 +922,26 @@ function resultFromExtra(extra) {
   return {results: [], extra: extra};
 }
 
+function checkCollectionOperationFields(parsed, fields) {
+  var operation = parsed.collectionOperationKey;
+  if (!fields || !operation) return null;
+  if (operation === '$distinct' && isProjectedDistinct(parsed.collectionOperationValue, fields)) {
+    return null;
+  }
+  return ShareDbMongo.collectionOperationOutsideProjectionError(operation);
+}
+
+function isProjectedDistinct(distinct, fields) {
+  if (!isObject(distinct) || typeof distinct.field !== 'string') return false;
+  return hasOwn(fields, distinct.field.split('.')[0]);
+}
+
 ShareDbMongo.prototype.query = function(collectionName, inputQuery, fields, options, callback) {
   var self = this;
   this.getCollection(collectionName, function(err, collection) {
     if (err) return callback(err);
     var projection = getProjection(fields, options);
-    self._query(collection, inputQuery, projection, function(err, results, extra) {
+    self._query(collection, inputQuery, fields, projection, function(err, results, extra) {
       if (err) return callback(err);
       var snapshots = [];
       for (var i = 0; i < results.length; i++) {
@@ -940,8 +957,9 @@ ShareDbMongo.prototype.queryPoll = function(collectionName, inputQuery, options,
   var self = this;
   this.getCollectionPoll(collectionName, function(err, collection) {
     if (err) return callback(err);
+    var fields = options && options.fields;
     var projection = {_id: 1};
-    self._query(collection, inputQuery, projection, function(err, results, extra) {
+    self._query(collection, inputQuery, fields, projection, function(err, results, extra) {
       if (err) return callback(err);
       var ids = [];
       for (var i = 0; i < results.length; i++) {
@@ -1698,6 +1716,13 @@ ShareDbMongo.cursorAndCollectionMethodError = function(collectionOperation) {
     code: 4110,
     message: 'Cursor methods can\'t run after collection method ' +
       collectionOperation
+  };
+};
+ShareDbMongo.collectionOperationOutsideProjectionError = function(collectionOperation) {
+  return {
+    code: 4111,
+    message: 'Collection method ' + collectionOperation +
+      ' may read fields outside the projection'
   };
 };
 
