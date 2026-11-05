@@ -1131,7 +1131,7 @@ ShareDbMongo.prototype.checkQuery = function(query) {
     }
   }
 
-  if (!this.allowAggregateQueries && query.$aggregate) {
+  if (!this.allowAggregateQueries && hasOwn(query, '$aggregate')) {
     return ShareDbMongo.$aggregateDisabledError();
   }
 };

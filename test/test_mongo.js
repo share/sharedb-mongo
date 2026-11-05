@@ -431,6 +431,16 @@ describe('mongo db', function() {
       });
     });
 
+    [null, false, 0, ''].forEach(function(pipeline) {
+      it('does not let you run falsy $aggregate: ' + JSON.stringify(pipeline), function(done) {
+        this.db.query('testcollection', {$aggregate: pipeline}, null, null, function(err, results, extra) {
+          expect(err && err.code).eql(4105);
+          expect(extra).undefined;
+          done();
+        });
+      });
+    });
+
     it('does not allow $mapReduce queries by default', function(done) {
       var snapshots = [
         {type: 'json0', v: 1, data: {player: 'a', round: 1, score: 5}},
