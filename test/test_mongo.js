@@ -250,6 +250,81 @@ describe('mongo db', function() {
       });
     });
 
+    describe('collection operations on a projection', function() {
+      var fields = {name: true};
+
+      beforeEach(function(done) {
+        var snapshot = {
+          type: 'json0',
+          id: 'alice',
+          v: 1,
+          data: {name: {first: 'Alice'}, email: 'alice@example.com'}
+        };
+        this.db.allowJSQueries = true;
+        this.db.allowAggregateQueries = true;
+        this.db.commit('users', snapshot.id, {v: 0, create: {}}, snapshot, null, done);
+      });
+
+      it('runs $distinct on a projected field', function(done) {
+        this.db.query('users', {$distinct: {field: 'name.first'}}, fields, null, function(err, results, extra) {
+          if (err) return done(err);
+          expect(extra).eql(['Alice']);
+          done();
+        });
+      });
+
+      it('runs $distinct on any field without a projection', function(done) {
+        this.db.query('users', {$distinct: {field: 'email'}}, null, null, function(err, results, extra) {
+          if (err) return done(err);
+          expect(extra).eql(['alice@example.com']);
+          done();
+        });
+      });
+
+      it('runs $distinct on any field when polling without a projection', function(done) {
+        this.db.queryPoll('users', {$distinct: {field: 'email'}}, null, function(err, ids, extra) {
+          if (err) return done(err);
+          expect(extra).eql(['alice@example.com']);
+          done();
+        });
+      });
+
+      it('runs $distinct on a projected field when polling', function(done) {
+        var options = {fields: fields};
+        this.db.queryPoll('users', {$distinct: {field: 'name.first'}}, options, function(err, ids, extra) {
+          if (err) return done(err);
+          expect(extra).eql(['Alice']);
+          done();
+        });
+      });
+
+      it('rejects $distinct outside the projection when polling', function(done) {
+        var options = {fields: fields};
+        this.db.queryPoll('users', {$distinct: {field: 'email'}}, options, function(err, ids, extra) {
+          expect(err && err.code).eql(4111);
+          expect(extra).undefined;
+          done();
+        });
+      });
+
+      [
+        {$distinct: {field: 'email'}},
+        {$distinct: {field: 'names'}},
+        {$distinct: {field: ['name']}},
+        {$distinct: null},
+        {$aggregate: [{$project: {email: 1}}]},
+        {$mapReduce: {map: 'function() {}', reduce: 'function() {}'}}
+      ].forEach(function(query) {
+        it('rejects ' + JSON.stringify(query), function(done) {
+          this.db.query('users', query, fields, null, function(err, results, extra) {
+            expect(err && err.code).eql(4111);
+            expect(extra).undefined;
+            done();
+          });
+        });
+      });
+    });
+
     describe('queryPollDoc correctly filters on _id', function() {
       var snapshot = {type: 'json0', v: 1, data: {}, id: 'test'};
 
@@ -353,6 +428,16 @@ describe('mongo db', function() {
       this.db.query('testcollection', query, null, null, function(err) {
         expect(err).ok;
         done();
+      });
+    });
+
+    [null, false, 0, ''].forEach(function(pipeline) {
+      it('does not let you run falsy $aggregate: ' + JSON.stringify(pipeline), function(done) {
+        this.db.query('testcollection', {$aggregate: pipeline}, null, null, function(err, results, extra) {
+          expect(err && err.code).eql(4105);
+          expect(extra).undefined;
+          done();
+        });
       });
     });
 
