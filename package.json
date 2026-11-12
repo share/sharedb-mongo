@@ -23,7 +23,7 @@
     "nyc": "^18.0.0",
     "ot-json1": "^1.0.1",
     "rich-text": "^4.1.0",
-    "sharedb": "^6.0.0",
+    "sharedb": "^7.0.1",
     "sharedb-mingo-memory": "^5.0.0",
     "sinon": "^22.0.0",
     "sinon-chai": "^4.0.1"
