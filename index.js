@@ -2,6 +2,7 @@ var mongodb = require('./mongodb');
 var DB = require('sharedb').DB;
 var OpLinkValidator = require('./op-link-validator');
 var MiddlewareHandler = require('./src/middleware/middlewareHandler');
+var RequestDeduplicator = require('./src/request-deduplicator');
 
 module.exports = ShareDbMongo;
 
@@ -74,6 +75,7 @@ function ShareDbMongo(mongo, options) {
   }
 
   this._middleware = new MiddlewareHandler();
+  this._getOpsRequests = new RequestDeduplicator();
 };
 
 ShareDbMongo.prototype = Object.create(DB.prototype);
@@ -476,18 +478,45 @@ ShareDbMongo.prototype.getOps = function(collectionName, id, from, to, options, 
       if (self.getOpsWithoutStrictLinking) fetchOpsTo = opLink._v;
     }
 
-    self._getOps(collectionName, id, from, fetchOpsTo, options, function(err, ops) {
-      if (err) return callback(err);
-      var filtered = filterOps(ops, opLink, to);
-      var err = null;
-      if (!options.ignoreMissingOps) {
-        err = checkOpsFrom(collectionName, id, filtered, from);
-      }
-      if (err) return callback(err);
-      callback(null, filtered);
-    });
+    var fetchOptions = {
+      metadata: !!options.metadata,
+      ignoreMissingOps: !!options.ignoreMissingOps
+    };
+    var requestKey = {
+      collectionName: collectionName,
+      id: id,
+      from: nullIfUnset(from),
+      to: nullIfUnset(to),
+      options: fetchOptions,
+      opLink: opLinkKey(opLink)
+    };
+    self._getOpsRequests.run(requestKey, function(done) {
+      self._getOps(collectionName, id, from, fetchOpsTo, fetchOptions, function(err, ops) {
+        if (err) return done(err);
+        var filtered = filterOps(ops, opLink, to);
+        var err = null;
+        if (!fetchOptions.ignoreMissingOps) {
+          err = checkOpsFrom(collectionName, id, filtered, from);
+        }
+        if (err) return done(err);
+        done(null, filtered);
+      });
+    }, callback);
   });
 };
+
+function nullIfUnset(version) {
+  return version == null ? null : version;
+}
+
+function opLinkKey(opLink) {
+  if (!opLink) return null;
+  var opId = opLink._o;
+  return {
+    version: opLink._v,
+    opId: typeof opId.toHexString === 'function' ? opId.toHexString() : opId
+  };
+}
 
 ShareDbMongo.prototype.getOpsBulk = function(collectionName, fromMap, toMap, options, callback) {
   var self = this;
